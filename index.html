@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>韩国首尔商业巡店手册 (MVP) · 咖啡/零售从业者专版</title>
+  <title>首尔商业巡店推荐</title>
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <!-- Kakao Maps SDK (Configured with user's JavaScript Key) -->
+  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=a83b5b1a2e4c83f703f97e2239caefb1&autoload=false"></script>
+  <!-- Leaflet SDK as automatic fallback for unwhitelisted sandbox preview domains -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
@@ -15,16 +18,14 @@
       color: #1c1917;
       -webkit-tap-highlight-color: transparent;
     }
-    /* Hide scrollbar for Chrome, Safari and Opera */
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
-    /* Hide scrollbar for IE, Edge and Firefox */
     .no-scrollbar {
-      -ms-overflow-style: none;  /* IE and Edge */
-      scrollbar-width: none;  /* Firefox */
+      -ms-overflow-style: none;
+      scrollbar-width: none;
     }
-    /* Custom permanent map labels */
+    /* Custom permanent map labels (shared across Kakao CustomOverlay & Leaflet Tooltip) */
     .store-map-label {
       background: rgba(255, 255, 255, 0.96);
       border: 1.5px solid #292524;
@@ -33,16 +34,16 @@
       font-size: 11px;
       font-weight: 600;
       color: #1c1917;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.14);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.16);
       white-space: nowrap;
       pointer-events: auto;
       cursor: pointer;
       transition: all 0.2s ease;
     }
     .store-map-label.active-label {
-      background: #1c1917;
-      color: #ffffff;
-      border-color: #f59e0b;
+      background: #1c1917 !important;
+      color: #ffffff !important;
+      border-color: #f59e0b !important;
       transform: scale(1.08);
       z-index: 9999 !important;
     }
@@ -64,16 +65,48 @@
       color: white;
       border: 2px solid white;
       box-shadow: 0 2px 5px rgba(0,0,0,0.28);
+      cursor: pointer;
       transition: transform 0.2s ease;
     }
     .custom-pin.active-pin {
       transform: scale(1.25);
       border-color: #fef08a;
-      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.35);
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.38);
+      z-index: 9998;
     }
-    /* Desaturate standard OSM tiles slightly so store pins & labels stand out cleanly */
+    /* Kakao CustomOverlay wrapper positioning */
+    .kakao-marker-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      user-select: none;
+    }
+    .kakao-label-pos-right {
+      position: absolute;
+      left: 28px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .kakao-label-pos-left {
+      position: absolute;
+      right: 28px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .kakao-label-pos-top {
+      position: absolute;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    .kakao-label-pos-bottom {
+      position: absolute;
+      top: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
     .clean-osm-tiles {
-      filter: saturate(0.35) contrast(0.95) brightness(1.03);
+      filter: saturate(0.38) contrast(0.96) brightness(1.03);
     }
   </style>
 </head>
@@ -84,15 +117,14 @@
     <div class="max-w-md mx-auto px-4 pt-3 pb-2">
       <div class="flex items-center justify-between mb-2">
         <div>
-          <span class="inline-block px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase bg-stone-900 text-amber-300 rounded">MVP 概念验证版</span>
-          <h1 class="text-base font-bold text-stone-900 tracking-tight mt-0.5">首尔商业巡店考察指南</h1>
+          <h1 class="text-base font-bold text-stone-900 tracking-tight">首尔商业巡店推荐</h1>
         </div>
         <button id="toggleGuideBtn" type="button" class="text-xs font-medium text-stone-600 bg-white border border-stone-300 px-2.5 py-1.5 rounded-lg shadow-sm active:scale-95 transition">
           数据维护说明
         </button>
       </div>
 
-      <!-- Level 1 Directory: 6 Major Commercial Districts -->
+      <!-- Level 1 Directory: 6 Major Commercial Districts (Strict Order: 明洞、弘大、汉南洞、圣水洞、江南、益善洞) -->
       <div class="flex space-x-1.5 overflow-x-auto no-scrollbar py-1" id="districtTabs" role="tablist">
         <!-- Populated dynamically via JS -->
       </div>
@@ -104,12 +136,12 @@
 
     <!-- Section 1: Interactive Map Card -->
     <section class="bg-white rounded-2xl border border-stone-200/90 shadow-sm overflow-hidden">
-      <div class="px-3.5 py-2.5 border-b border-stone-100 flex items-center justify-between">
-        <div class="flex items-center space-x-1.5">
-          <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
-          <h2 class="text-xs font-bold text-stone-800" id="mapHeaderTitle">商圈旺店分布图（点位+店名同屏）</h2>
+      <div class="px-3.5 py-2.5 border-b border-stone-100 flex items-center justify-between gap-1">
+        <div class="flex items-center space-x-1.5 min-w-0">
+          <span class="w-2 h-2 rounded-full bg-emerald-600 shrink-0"></span>
+          <h2 class="text-xs font-bold text-stone-800 truncate" id="mapHeaderTitle">明洞</h2>
         </div>
-        <div class="flex items-center space-x-1.5">
+        <div class="flex items-center space-x-1 shrink-0">
           <button id="switchBasemapBtn" type="button" class="text-[11px] font-medium px-2 py-1 rounded bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition">
             底图: 极简街景
           </button>
@@ -123,7 +155,7 @@
       </div>
 
       <!-- Map Container -->
-      <div class="relative h-64 w-full bg-stone-100">
+      <div class="relative h-72 w-full bg-stone-100">
         <div id="seoulMap" class="h-full w-full z-10"></div>
       </div>
 
@@ -136,11 +168,11 @@
     <!-- Section 2: Level-1 District Historical Evolution & Commercial Context (Collapsible) -->
     <section class="bg-white rounded-2xl border border-stone-200/90 shadow-sm overflow-hidden">
       <button id="historyAccordionBtn" type="button" class="w-full px-4 py-3 flex items-center justify-between text-left bg-stone-900 text-white">
-        <div>
-          <div class="text-[10px] uppercase tracking-wider text-amber-300 font-semibold" id="districtSubtitle">SEONGSU-DONG · 商圈演进脉络</div>
-          <h2 class="text-sm font-bold mt-0.5" id="districtTitle">圣水洞：从手工鞋匠工厂区到亚洲先锋零售实验场</h2>
+        <div class="pr-2">
+          <div class="text-[10px] uppercase tracking-wider text-amber-300 font-semibold" id="districtSubtitle">MYEONG-DONG · 商圈演进脉络</div>
+          <h2 class="text-sm font-bold mt-0.5 leading-snug" id="districtTitle">明洞：历经百年的首尔第一商业中心与超级旅游零售复苏样本</h2>
         </div>
-        <span id="historyAccordionIcon" class="text-xs bg-stone-800 px-2 py-1 rounded text-stone-200 transition-transform duration-200">收起 ▲</span>
+        <span id="historyAccordionIcon" class="text-xs bg-stone-800 px-2 py-1 rounded text-stone-200 shrink-0 transition-transform duration-200">收起 ▲</span>
       </button>
 
       <div id="historyAccordionBody" class="p-4 space-y-3 text-xs leading-relaxed text-stone-700">
@@ -149,7 +181,7 @@
     </section>
 
     <!-- Quick Jump Secondary Directory Bar -->
-    <nav class="sticky top-[82px] z-30 bg-[#f4f4f0]/95 backdrop-blur py-1.5">
+    <nav class="sticky top-[68px] z-30 bg-[#f4f4f0]/95 backdrop-blur py-1.5">
       <div class="flex items-center space-x-2 overflow-x-auto no-scrollbar" id="subCategoryJumpBar">
         <!-- Populated by JS -->
       </div>
@@ -163,24 +195,24 @@
   </main>
 
   <!-- Toast Notification for Clipboard Copy -->
-  <div id="copyToast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 translate-y-2 transition-all duration-200">
+  <div id="copyToast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 translate-y-2 transition-all duration-200 w-11/12 max-w-sm">
     <div class="bg-stone-900/95 text-white px-4 py-2.5 rounded-xl shadow-lg border border-stone-700 flex items-center space-x-2 text-xs">
-      <span class="text-emerald-400 font-bold">✓</span>
-      <span id="copyToastText">已复制店名，可直接粘贴至地图软件搜索</span>
+      <span class="text-emerald-400 font-bold shrink-0">✓</span>
+      <span id="copyToastText" class="truncate">已复制店名，可直接粘贴至地图软件搜索</span>
     </div>
   </div>
 
-  <!-- Modal for How to Edit/Deploy on GitHub Pages -->
+  <!-- Modal for Kakao Map Domain Setup & Data Maintenance -->
   <div id="guideModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs hidden items-center justify-center p-4">
-    <div class="bg-white rounded-2xl max-w-sm w-full p-4 shadow-xl border border-stone-200 space-y-3">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-4 shadow-xl border border-stone-200 space-y-3 max-h-[85vh] overflow-y-auto">
       <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
-        <h3 class="text-sm font-bold text-stone-900">如何修改内容与部署到 GitHub Pages</h3>
+        <h3 class="text-sm font-bold text-stone-900">Kakao 地图配置与数据维护说明</h3>
         <button id="closeGuideBtn" type="button" class="text-xs text-stone-500 hover:text-stone-900 px-2 py-0.5 rounded bg-stone-100">关闭</button>
       </div>
-      <div class="text-xs text-stone-600 space-y-2 leading-relaxed">
-        <p><strong class="text-stone-900">1. 为什么这是 MVP 最小可行模型？</strong><br/>目前完整录入了<strong>圣水洞（6家标杆店）</strong>与<strong>益善洞（2家标杆店）</strong>的全量结构，其余4个商圈（明洞、弘大、汉南洞、江南）已预留好一级目录切换框架。</p>
-        <p><strong class="text-stone-900">2. 以后怎么改文字或加新店？</strong><br/>打开本文件源码，搜索 <code class="bg-stone-100 px-1 py-0.5 rounded text-stone-800">SEOUL_GUIDE_DATA</code>，所有商圈历史、二级目录、店名、经纬度都在最上方整齐排列，直接改中文或让 AI 帮你追加即可。</p>
-        <p><strong class="text-stone-900">3. 一键复制店名逻辑：</strong><br/>每家门店卡片均提供<strong>“复制韩文店名”</strong>与<strong>“复制英文/招牌店名”</strong>两个按钮，方便同行在 Naver Map、Kakao Map 或 Google Maps 中直接粘贴检索。</p>
+      <div class="text-xs text-stone-600 space-y-2.5 leading-relaxed">
+        <p><strong class="text-stone-900">1. Kakao Maps 双引擎自动护航机制：</strong><br/>已内置您的 Kakao JavaScript Key (<code class="bg-stone-100 px-1 py-0.5 rounded">a83b5b1a...efb1</code>)。当部署在已添加白名单的 GitHub Pages 域名（如 <code class="bg-stone-100 px-1 py-0.5 rounded">https://ziyanchen19981221-maker.github.io</code>）时，会自动调用韩国本土最高精度的 <strong>Kakao 原生韩文街巷地图</strong>；若在未授权的临时预览窗打开，会自动无缝切回免鉴权街景引擎，确保任何环境下永不白屏。</p>
+        <p><strong class="text-stone-900">2. 请确认 Kakao 后台已登记 GitHub 域名：</strong><br/>在 Kakao Developers 后台的 <strong>[플랫폼 (Platform) -> Web -> 사이트 도메인 (Site Domain)]</strong> 中，请务必填入：<br/><code class="bg-amber-50 border border-amber-200 text-amber-900 px-1.5 py-0.5 rounded block mt-1 select-all">https://ziyanchen19981221-maker.github.io</code></p>
+        <p><strong class="text-stone-900">3. 6大商圈全量覆盖（共160家标杆旺店）：</strong><br/>严格按照「明洞 → 弘大 → 汉南洞 → 圣水洞 → 江南 → 益善洞」顺序排布，每个商圈均将独有特色板块置于末尾，所有门店数据均集中在源码顶部的 <code class="bg-stone-100 px-1 py-0.5 rounded">SEOUL_GUIDE_DATA</code> 中，随时可增删修改。</p>
       </div>
     </div>
   </div>
@@ -188,541 +220,3705 @@
   <script>
     // ============================================================================
     // 【核心数据配置区 SEOUL_GUIDE_DATA】
-    // 后续增删门店、修改商圈历史脉络，只需修改此对象即可，无需改动下方渲染与地图逻辑
+    // 一级目录顺序：明洞 (myeongdong) -> 弘大 (hongdae) -> 汉南洞 (hannam) -> 圣水洞 (seongsu) -> 江南 (gangnam) -> 益善洞 (ikseon)
+    // 二级目录顺序：常规核心业态在前（咖啡/烘焙 -> 商超/集合店 -> 品牌文创 -> 潮流/买手），商圈独有特色板块置于最后
     // ============================================================================
+    const DISTRICT_ORDER = ["myeongdong", "hongdae", "hannam", "seongsu", "gangnam", "ikseon"];
+
     const SEOUL_GUIDE_DATA = {
-      seongsu: {
-        id: "seongsu",
-        name: "圣水洞",
-        enName: "SEONGSU-DONG",
-        status: "MVP 完整示范",
-        center: [37.5436, 127.0568],
-        zoom: 15,
-        headline: "圣水洞：从手工鞋匠工厂区到亚洲先锋零售实验场",
-        retailOverview: "如果来首尔只能看一个商圈，90% 的咖啡与新零售从业者会首选圣水洞。这里打破了传统购物中心标准铺位的束缚，以500~2000㎡的独栋红砖废旧工厂、修车行和仓库为载体，成为全亚洲高概念快闪（Pop-up）、策展型旗舰店与工业风烘焙咖啡的最高密度聚集区。",
-        timeline: [
+  "myeongdong": {
+    id: "myeongdong",
+    name: "明洞",
+    enName: "MYEONG-DONG",
+    status: "26家核心旺店",
+    center: [
+      37.5632,
+      126.9838
+    ],
+    zoom: 15,
+    kakaoLevel: 4,
+    headline: "明洞：历经百年的首尔第一商业中心与超级旅游零售复苏样本",
+    retailOverview: "对零售与食品饮料从业者而言，明洞是观察“极致高周转旅游伴手礼商业”与“百年新古典主义百货地标”的最佳样本。经历行业洗牌后，明洞淘汰了低质同质化街铺，演化出以多国语言自助结账、整栋式超级旗舰店（Olive Young全球总店、HBAF杏仁主题乐园、12层大创）以及历史地标借景咖啡为核心的高坪效矩阵。",
+    timeline: [
+      {
+        period: "朝鲜时代至近代 · 钟路以南住宅与明治町商业化",
+        desc: "朝鲜时期原名“明礼坊”，为汉阳南部的静谧住宅区；20世纪初随着新世界百货前身（三越百货京城店，1930年）与韩国银行总部的落成，迅速崛起为近代首尔金融与洋货消费中心。"
+      },
+      {
+        period: "1970s–2010s · 韩国流行文化与美妆街铺黄金期",
+        desc: "成为全韩地王级商圈，聚集了第一代单品牌美妆街铺（悦诗风吟、伊思等）与密集的小吃夜市，是亚洲游客赴韩的第一站。"
+      },
+      {
+        period: "2023至今 · 体验式超级大店与百年建筑借景复兴",
+        desc: "从单一卖货转向“巨型IP/零食仓储乐园 + 12层垂直极简百货 + 历史建筑景观咖啡”，单店面积扩大3~5倍，客单价与跨国游客转化率重回巅峰。"
+      }
+    ],
+    categories: [
+      {
+        id: "coffee",
+        name: "咖啡与烘焙旺店",
+        shortName: "咖啡/烘焙",
+        color: "#059669",
+        badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+        isSpecial: false,
+        description: "在寸土寸金的明洞，能跑出高坪效的咖啡烘焙店，靠的都是“城市历史地标借景（明洞圣堂/大使馆古树）”或“强礼盒伴手礼属性”。",
+        stores: [
           {
-            period: "1960s–1990s · 工业底色",
-            desc: "曾是首尔最大的轻工业制造基地之一，聚集了数百家制鞋作坊、印刷厂、五金染色厂与汽车维修车间，留下了独特的红砖坡屋顶建筑群与挑高无柱空间。"
+            id: "molto-myeongdong",
+            nameCn: "Molto 意式浓缩咖啡吧",
+            nameKr: "몰토 이탈리안 에스프레소바",
+            nameEn: "Molto Italian Espresso Bar",
+            lat: 37.56342,
+            lng: 126.98625,
+            labelDir: "right",
+            address: "首尔中区明洞街 73 3楼 (서울 중구 명동길 73 3F)",
+            tags: [
+              "明洞圣堂正对露台",
+              "Espresso Bar风潮代表",
+              "三楼借景天花板"
+            ],
+            brandIntro: "引领首尔意式浓缩吧（Espresso Bar）细分赛道破圈的标杆品牌，主打站立或露台品鉴的创意浓缩特调（如加盐奶油浓缩 Caffe Sale）与现烤咸味牛角包。",
+            storeDetail: "选址于明洞圣堂正对面的 Page Myeongdong 复合大楼3楼弧形露台。将1898年落成的哥特式红砖大教堂全景与绿树直接纳入吧台视野。",
+            diffHighlight: "作为品牌唯一核心门店，它向零售界证明了在传统高租金旅游老商圈，只要找到不可复制的“城市级建筑借景位（3楼露台）”，无需一楼天价街铺也能成为全城流量引擎。",
+            num: 1
           },
           {
-            period: "2010s初期 · 废墟咖啡启蒙",
-            desc: "随着传统制造业外迁与租金洼地效应，以大林仓库（Daelim Changgo，2011）、Cafe Onion（2016）为代表的先锋主理人入驻，不粉饰斑驳水泥墙面，开创了席卷亚洲的“废墟工业风咖啡”浪潮。"
+            id: "the-spot-fabulous",
+            nameCn: "The Spot Fabulous 咖啡甜点店",
+            nameKr: "더스팟패뷸러스",
+            nameEn: "The Spot Fabulous",
+            lat: 37.56218,
+            lng: 126.98225,
+            labelDir: "left",
+            address: "首尔中区明洞2街 22 1~2楼 (서울 중구 명동2길 22)",
+            tags: [
+              "原中国大使馆旁历史老楼",
+              "二楼落地窗树景",
+              "复古木质结构"
+            ],
+            brandIntro: "深耕明洞历史街区的独立精品咖啡与手工甜点品牌，专注于对首尔近代折衷主义老建筑的修缮与再利用。",
+            storeDetail: "隐藏在中国驻韩大使馆右侧的小巷尽头，改造自一栋六十余年历史的近代双层老洋房。2楼保留老式木窗框，正对大使馆高墙内的参天古树。",
+            diffHighlight: "明洞主街几乎被现代玻璃幕墙大厦占据，这家店是明洞商圈内极少数完整保留近代木构洋房格局的独栋咖啡空间，无分店复制。",
+            num: 2
           },
           {
-            period: "2020至今 · 顶流快闪与重奢策展时代",
-            desc: "演武场路（Yeonmujang-gil）成为韩国品牌价值放大器。Dior 概念店、Tamburins 骨骼水泥建筑、Musinsa 等巨头相继拿地建独栋，形成“特种咖啡 + 策展式香氛美妆 + 复合选品”的高坪效商业生态。"
-          }
-        ],
-        categories: [
-          {
-            id: "special",
-            name: "商圈独有特色：策展型快闪与复合空间",
-            shortName: "特色：策展/快闪",
-            color: "#d97706", // amber-600
-            badgeBg: "bg-amber-100 text-amber-900 border-amber-300",
-            isSpecial: true,
-            description: "圣水洞区别于首尔其他商圈的核心壁垒在于「空间即媒体」。这里的门店往往牺牲高达40%~60%的货架陈列面积，全部用来做大型艺术装置、庭院造景或跨业态策展。",
-            stores: [
-              {
-                num: 1,
-                id: "dior-seongsu",
-                nameCn: "Dior 圣水概念店",
-                nameKr: "디올 성수",
-                nameEn: "Dior Seongsu",
-                lat: 37.54415,
-                lng: 127.05785,
-                labelDir: "right",
-                address: "首尔城东区演武场5街 7 (서울 성동구 연무장5길 7)",
-                tags: ["重奢本土化标杆", "温室花园建筑", "数字化预约动线"],
-                brandIntro: "法国LVMH集团旗下顶级时装屋 Christian Dior。近年来在年轻化与本土文化联结上动作极为激进，擅长通过极具视觉冲击力的限时建筑撬动社交媒体自然流量。",
-                storeDetail: "受巴黎蒙田大道30号总店启发，以金属网格与通透玻璃在圣水洞街头搭建出一座挑高温室宫殿，外围环绕韩国本土野花与松树庭院。店内集成高端鞋包展售与 Café Dior。",
-                diffHighlight: "【与同品牌其他店差异】不同于百货公司内封闭高冷的传统重奢专柜，圣水店原本作为限时快闪落地，因现象级打卡热度转为长期概念空间；它是全韩唯一完全采用全透明街边玻璃温室结构、将本土韩屋自然造景与法式铁艺结合的门店，甚至带动了整条演武场路租金翻倍。"
-              },
-              {
-                num: 2,
-                id: "lcdc-seoul",
-                nameCn: "LCDC SEOUL 复合空间",
-                nameKr: "엘씨디씨 서울",
-                nameEn: "LCDC SEOUL",
-                lat: 37.54602,
-                lng: 127.05895,
-                labelDir: "top",
-                address: "首尔城东区演武场17街 10 (서울 성동구 연무장17길 10)",
-                tags: ["汽车修理厂改造", "四层垂直社区", "小众主理人孵化"],
-                brandIntro: "由韩国时装集团 SJ Group（旗下拥有袋鼠品牌 Kangol 韩国运营权及自创服饰品牌）发起并打造的商业地产与生活方式内容运营品牌。",
-                storeDetail: "将一座四层高的旧汽车修理厂改造为带中庭广场的垂直商业综合体：1楼为网红咖啡厅 Ephemera 与快闪展厅，2楼为自营选品店 Le Conte Des Contes，3楼聚集了6~8家微型独立设计师文创、香氛与Vintage小店，4楼为天台酒吧 Bar Postscript。",
-                diffHighlight: "【商业模型特殊性】它不是单一品牌门店，而是“大品牌做房东+策展人、小主理人贡献内容度”的微型非标商业体模板。3楼每个房间仅15~25㎡，却极好地解决了独立小品牌进驻核心商圈成本过高的痛点。"
-              }
-            ]
+            id: "knotted-myeongdong",
+            nameCn: "Cafe Knotted 明洞新世界店",
+            nameKr: "노티드 신세계백화점 본점",
+            nameEn: "Cafe Knotted Shinsegae Main",
+            lat: 37.56045,
+            lng: 126.98085,
+            labelDir: "left",
+            address: "首尔中区小公路 63 新世界百货本馆 B1 (서울 중구 소공로 63 지하1층)",
+            tags: [
+              "韩国国民级奶油甜甜圈",
+              "GFFG集团王牌",
+              "高坪效外带档口"
+            ],
+            brandIntro: "由韩国餐饮孵化巨头 GFFG 创立的超级烘焙IP，凭借标志性的“黄色笑脸（Smile）+ 粉嫩包装盒 + 爆浆牛奶奶油甜甜圈”席卷全韩。",
+            storeDetail: "位于新世界百货本馆B1美食街核心动线。采用高饱和度鹅黄色门头与全透明奶油灌注展示窗，专攻高转化率礼盒外带。",
+            diffHighlight: "相比蚕室乐天世界店（大型游乐园互动空间）或安国店（韩屋庭院堂食店），明洞新世界店是极致的“百货B1高坪效外带档口模型”，砍掉冗余座位专注快速出餐。",
+            num: 3
           },
           {
-            id: "coffee",
-            name: "咖啡与烘焙旺店",
-            shortName: "咖啡/烘焙",
-            color: "#059669", // emerald-600
-            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
-            isSpecial: false,
-            description: "圣水洞的咖啡馆深刻影响了过去五年国内网红烘焙与工业风咖啡店的视觉体系——“前店后厂明档烘焙 + 中央巨型金属/石头摆台 + 极强单品记忆点”。",
-            stores: [
-              {
-                num: 3,
-                id: "cafe-onion-seongsu",
-                nameCn: "Cafe Onion 圣水店",
-                nameKr: "어니언 성수",
-                nameEn: "Cafe Onion Seongsu",
-                lat: 37.54478,
-                lng: 127.05042,
-                labelDir: "left",
-                address: "首尔城东区峨嵯山路9街 8 (서울 성동구 아차산로9길 8)",
-                tags: ["废墟工业风鼻祖", "雪山パン Pandoro", "前店后厂烘焙"],
-                brandIntro: "由韩国设计创意团队 Fabrikr 主导创立的精品咖啡与烘焙品牌（母公司亦孵化了广藏市场爆红的复古麻花店）。品牌核心壁垒在于对老旧建筑肌理的极致保留与高辨识度烘焙视觉。",
-                storeDetail: "圣水洞空间改造的开山之作。门店前身建于1970年代，曾先后作为超市、食堂、住宅与金属零件修理厂。门店保留了断壁残垣、裸露红砖与水泥地面，一楼中央长桌铺满数十款现烤面包（以撒满糖粉的“雪山包 Pandoro”最出圈），二楼为屋顶露台与透明烘焙工坊。",
-                diffHighlight: "【与同品牌其他店差异】Onion 每家店完全拒绝复制同一套装修：安国店（Anguk）是全韩屋庭院木构风，广藏市场店（Gwangjang）是市井摊档胶带涂鸦风，而圣水店则是品牌的1号发源地与唯一纯正的重工业废墟风代表，烘焙品类的陈列体量也是各店之最。"
-              },
-              {
-                num: 4,
-                id: "camel-coffee-seongsu",
-                nameCn: "Camel Coffee 圣水1号店",
-                nameKr: "카멜커피 성수점",
-                nameEn: "Camel Coffee Seongsu",
-                lat: 37.54192,
-                lng: 127.05815,
-                labelDir: "bottom",
-                address: "首尔城东区圣水二路7街 26 (서울 성동구 성수이로7길 26)",
-                tags: ["小面积高坪效", "招牌特调奶咖", "主理人IP驱动"],
-                brandIntro: "由极具个人穿搭与审美风格的网红主理人 Park Kang-hyun（人称 Mr. Camel）创立的复古街头精品咖啡品牌，凭借一款高甜醇厚、仅小杯出品的签名奶咖（Camel Coffee）火遍全韩并进军现代百货。",
-                storeDetail: "藏在圣水洞支路小巷里的一间极小独栋民房改造店，门头是剥落的复古棕木与深绿色遮阳棚，室内摆满主理人淘来的中古家具与怀旧挂画，空间虽窄但翻台率极高。",
-                diffHighlight: "【与同品牌其他店差异】虽然 Camel 后来在现代百货（The Hyundai Seoul）、清潭洞等地开了更宽敞明亮的商场店与旗舰店，但圣水这家是品牌的初代街巷精神图腾，保留了最原始的脏旧复古街角感，是考察“几十平米小店如何靠单一爆品+主理人审美做出全国连锁”的必看样本。"
-              }
-            ]
+            id: "coffee-libre-myeongdong",
+            nameCn: "Coffee Libre 明洞圣堂店",
+            nameKr: "커피리브레 명동성당점",
+            nameEn: "Coffee Libre Myeongdong Cathedral",
+            lat: 37.56315,
+            lng: 126.98705,
+            labelDir: "right",
+            address: "首尔中区明洞街 74 明洞圣堂地下1898广场 (서울 중구 명동길 74)",
+            tags: [
+              "韩国寻豆烘焙先驱",
+              "摔跤面具IP",
+              "教堂地下拱廊空间"
+            ],
+            brandIntro: "由韩国首位拥有美国精品咖啡协会（SCAA）认证的寻豆师徐弼勋创立，是韩国精品咖啡直接贸易（Direct Trade）与庄园豆烘焙的开山鼻祖，以墨西哥摔跤面具为品牌图腾。",
+            storeDetail: "位于明洞圣堂下沉式商业文化广场“1898广场”内，空间挑高开阔，集中展示来自全球十余个咖啡庄园的单一产地豆与挂耳礼盒。",
+            diffHighlight: "相比延南洞局促的初代小店和永登浦传统市场店，明洞圣堂店环境最庄重静谧，且与天主教文化书店相邻，是采购专业咖啡豆伴手礼的首选店。",
+            num: 4
           },
           {
-            id: "supermarket",
-            name: "商超与生活方式集合店",
-            shortName: "商超/集合店",
-            color: "#2563eb", // blue-600
-            badgeBg: "bg-blue-100 text-blue-900 border-blue-300",
-            isSpecial: false,
-            description: "在圣水洞，连传统意义上的美妆超市与日用百货都彻底重构了货架逻辑，从“大卖场堆头”转向“体验式大店”。",
-            stores: [
-              {
-                num: 5,
-                id: "olive-young-n",
-                nameCn: "Olive Young N 圣水旗舰店",
-                nameKr: "올리브영N 성수",
-                nameEn: "Olive Young N Seongsu",
-                lat: 37.54395,
-                lng: 127.05375,
-                labelDir: "bottom",
-                address: "首尔城东区演武场7街 13 (서울 성동구 연무장7길 13)",
-                tags: ["五层巨型概念店", "美妆商超进化形态", "皮肤诊断与VIP酒廊"],
-                brandIntro: "CJ集团旗下的韩国国民级健康与美妆集合商超（被誉为韩国版丝芙兰+屈臣氏结合体），市占率超过70%，是无数韩国中小K-Beauty品牌的孵化器。",
-                storeDetail: "共5层、总面积超4600㎡（约1400坪）的超级复合商业空间。字母“N”代表 New、Next、Nest。1楼几乎不放传统密集货架，而是做成大型主题展览区与咖啡烘焙吧；2~3楼按彩妆趋势、头皮护理、健康食品做沉浸式分区并提供专业仪器测肤与定制彩妆；4楼设有VIP会员休息室与直播间。",
-                diffHighlight: "【与同品牌其他店差异】这是全韩1300多家 Olive Young 中唯一冠以“N”字头的未来实验室店！普通门店（包括明洞旗舰店）核心逻辑是“高密度SKU货架+快速扫货结账”，而圣水N店彻底砍掉了便利店式的拥挤感，把美妆商超做成了可逛2小时的美妆主题乐园。"
-              }
-            ]
+            id: "breadyppost-myeongdong",
+            nameCn: "Breadyppost 明洞蝴蝶结椒盐卷饼店",
+            nameKr: "브레디포스트 명동점",
+            nameEn: "Breadyppost Myeongdong",
+            lat: 37.56245,
+            lng: 126.98585,
+            labelDir: "right",
+            address: "首尔中区忠武路2街 11-1 1~3楼 (서울 중구 명동8가길 31)",
+            tags: [
+              "德式软椒盐卷饼专门店",
+              "三层邮局主题独栋",
+              "黄油胡椒爆款"
+            ],
+            brandIntro: "把传统干硬的德国碱水结改良为“软韧汤种口感（Soft Pretzel）”的烘焙连锁黑马，以复古欧洲邮局为视觉体系。",
+            storeDetail: "三层独栋临街大店，一楼明档烤炉源源不断出炉数十种咸甜软碱水结（黄油黑胡椒、香葱奶油、炼乳椰蓉），二三楼为美式复古木质堂食区。",
+            diffHighlight: "相比龙山首店和圣水店，明洞店针对外国游客设计了三层超大客席容量与多语种图文标牌，早晨8点半即开门承接酒店早餐客流。",
+            num: 5
           },
           {
-            id: "cultural",
-            name: "品牌文创与香氛设计",
-            shortName: "品牌文创",
-            color: "#9333ea", // purple-600
-            badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
-            isSpecial: false,
-            description: "圣水洞的文创与香氛店擅长将廉价日用品（如回形针、护手霜）通过极致的剧场灯光与叙事包装，卖出高溢价与礼品属性。",
-            stores: [
-              {
-                num: 6,
-                id: "point-of-view",
-                nameCn: "Point of View 文具选品店",
-                nameKr: "포인트오브뷰 서울",
-                nameEn: "Point of View Seoul",
-                lat: 37.54355,
-                lng: 127.05485,
-                labelDir: "left",
-                address: "首尔城东区演武场街 18 (서울 성동구 연무장길 18)",
-                tags: ["三层文具博物馆", "极致陈列美学", "高客单自有文创"],
-                brandIntro: "由圣水洞知名咖啡馆 Zagmachi 的主理人创立的高端文具与桌面美学策展品牌，主张“文具是帮助创作者确立视角的工具”。",
-                storeDetail: "三层独栋空间。1楼偏重书写工具、印章与自有品牌纸品；2楼结合古典木柜与剧场级聚光灯，陈列来自全球的剪刀、黄铜镇纸与桌面器物；3楼为灵感图书与艺术展陈。每一件几块钱的小夹子都被放在丝绒托盘或石膏基座上展示。",
-                diffHighlight: "【与同品牌其他店差异】虽然品牌在现代百货开设了专柜，但圣水洞三层独栋总店拥有完整的暗调声光动线与最高比例的独家联名商品，是零售同行学习“如何靠道具陈列把低单价标品做成高毛利礼品”的教科书。"
-              },
-              {
-                num: 7,
-                id: "tamburins-seongsu",
-                nameCn: "Tamburins 圣水旗舰店",
-                nameKr: "탬버린즈 성수 플래그십스토어",
-                nameEn: "Tamburins Seongsu Flagship",
-                lat: 37.54392,
-                lng: 127.05818,
-                labelDir: "right",
-                address: "首尔城东区演武场5街 8 (서울 성동구 연무장5길 8)",
-                tags: ["骨架废墟建筑", "下沉式香氛展厅", "Gentle Monster同门"],
-                brandIntro: "由眼镜潮牌 Gentle Monster 母公司 IICOMBINED 孵化的艺术香氛与个护品牌，凭借链条护手霜、蛋形唇膏及极具冲击力的仿真人偶/动物装置艺术迅速成为亚洲现象级伴手礼品牌。",
-                storeDetail: "正好开在 Dior 圣水店正对面。地面层刻意只保留了一座历史建筑裸露的钢筋混凝土骨架与枯木花园，没有任何墙体与遮挡；真正的零售空间完全隐藏在地下一层（B1），顾客需顺着旋转楼梯步入地底画廊试香。",
-                diffHighlight: "【与同品牌其他店差异】新沙林荫道店、三清洞店与汉南洞店均为多层地上独栋，唯独圣水店采用“地上极简废墟艺术装置 + 地下沉浸式卖场”的反常规建筑结构，地面层100%让渡给城市公共打卡景观，极具话题侵略性。"
-              }
-            ]
+            id: "starbucks-byeoldabang",
+            nameCn: "Starbucks 别茶房 (韩国纪念旗舰店)",
+            nameKr: "스타벅스 별다방점",
+            nameEn: "Starbucks Byeoldabang",
+            lat: 37.56565,
+            lng: 126.98065,
+            labelDir: "top",
+            address: "首尔中区退溪路 100 State Tower Namsan 1楼 (서울 중구 퇴계로 100)",
+            tags: [
+              "韩国首家全韩文店名星巴克",
+              "巨型数字艺术LED墙",
+              "臻选+茶瓦纳全系"
+            ],
+            brandIntro: "新世界集团全资控股运营的韩国星巴克。“别茶房（별다방）”原本是韩国民间对星巴克的亲切俗称（意为星星茶馆），官方直接将其注册为旗舰店名。",
+            storeDetail: "位于明洞与会贤交界的顶级写字楼1楼，占地413㎡。店内设有一面宽8米、高4米的超清数字艺术瀑布屏（展示济州岛咖啡庄园动态影像），并采用环保再生材料打造韩屋斜屋顶吧台。",
+            diffHighlight: "全韩近1900家星巴克中唯一正式以韩文俗称“别茶房”命名的里程碑概念店，也是韩国星巴克ESG可持续店装规范的最高展示窗。",
+            num: 6
+          },
+          {
+            id: "metcha-myeongdong",
+            nameCn: "METCHA 明洞五层抹茶专门店",
+            nameKr: "멧차 명동점",
+            nameEn: "METCHA Myeongdong",
+            lat: 37.56375,
+            lng: 126.98295,
+            labelDir: "left",
+            address: "首尔中区明洞街 17 1~5楼 (서울 중구 명동길 17)",
+            tags: [
+              "五层垂直茶饮空间",
+              "现场石磨抹茶",
+              "济州茶园直供"
+            ],
+            brandIntro: "主打“现代韩国茶道（Modern Tea House）”的本土抹茶与烘焙品牌，原料全部采用韩国南部宝城与济州岛茶园头采遮阴绿茶。",
+            storeDetail: "在明洞主街包下一整栋五层建筑：1楼为石磨碾茶展示与外带吧台，2~4楼为现代极简东方禅意客席，售卖抹茶砖蛋糕、抹茶生巧与焙茶拿铁。",
+            diffHighlight: "作为品牌唯一的五层独栋总店，展示了茶饮品牌如何在高租金主街通过“一楼窄门面引流 + 垂直五层高客席消化”跑通大店模型。",
+            num: 7
+          },
+          {
+            id: "poem-myeongdong",
+            nameCn: "Cafe Poem 明洞复古芭菲甜品屋",
+            nameKr: "카페포엠 명동점",
+            nameEn: "Cafe Poem Myeongdong",
+            lat: 37.56255,
+            lng: 126.98345,
+            labelDir: "bottom",
+            address: "首尔中区明洞4街 13 2楼 (서울 중구 명동4길 13 2F)",
+            tags: [
+              "1971年开业活化石",
+              "昭和风巨型水果芭菲",
+              "老明洞茶房记忆"
+            ],
+            brandIntro: "创立于1971年的明洞老牌西洋茶房，见证了明洞半个世纪的兴衰，保留了70~80年代首尔知识分子约会茶馆的古典风貌。",
+            storeDetail: "位于二楼的复古木面板空间，服务员身着经典制服，主打高达30厘米的时令鲜草莓/芒果冰淇淋芭菲（Parfait）与比利时华夫饼。",
+            diffHighlight: "无连锁分店。它是研究韩国咖啡史从“70年代西洋茶房（Dabang）”向现代精品咖啡演变的活体标本，近年凭借复古Y2K摄影风再次翻红。",
+            num: 8
           }
         ]
       },
-
-      ikseon: {
-        id: "ikseon",
-        name: "益善洞",
-        enName: "IKSEON-DONG",
-        status: "MVP 示范",
-        center: [37.5736, 126.9901],
-        zoom: 17,
-        headline: "益善洞：首尔最古老近代韩屋群的“一店一世界”高密改造",
-        retailOverview: "益善洞展示了另一种极致的旧城改造逻辑：在宽度不足2米的迷宫式百年韩屋小巷里，百余家咖啡、烘焙与餐酒馆利用韓屋原有的天井（中庭）加上玻璃顶棚，在30~80㎡的局促面积内做出极具电影感的主题场景。该商圈几乎没有大型商超，核心看点集中在高溢价场景咖啡烘焙。",
-        timeline: [
+      {
+        id: "supermarket",
+        name: "商超与伴手礼量贩大店",
+        shortName: "商超/集合店",
+        color: "#2563eb",
+        badgeBg: "bg-blue-100 text-blue-900 border-blue-300",
+        isSpecial: false,
+        description: "明洞的商超业态展示了如何针对全球游客做“极致的试吃动线、12层垂直选品与即时退税（Tax Refund）一体化设计”。",
+        stores: [
           {
-            period: "1920年代 · 平民韩屋村诞生",
-            desc: "由近代房产开发商郑世权先生规划建设，是首尔最早的都市型改良韩屋密集区，旨在为普通市民提供买得起的现代韩屋住宅。"
+            id: "olive-young-myeongdong",
+            nameCn: "Olive Young 明洞Town全球总店",
+            nameKr: "올리브영 명동타운점",
+            nameEn: "Olive Young Myeongdong Town",
+            lat: 37.56412,
+            lng: 126.98515,
+            labelDir: "top",
+            address: "首尔中区明洞街 53 1~2楼 (서울 중구 명동길 53)",
+            tags: [
+              "全球外国游客1号总店",
+              "日均客流破万",
+              "四语电子价签与即时退税"
+            ],
+            brandIntro: "CJ集团旗下的韩国美妆与大健康零售霸主，全韩门店超1300家，是检验K-Beauty单品生死线的终极渠道。",
+            storeDetail: "双层超大型卖场（约1150㎡），全店采用中/英/日/韩四语导视，1楼核心区设置“Global Best Sellers”巨型端架与K-POP周边专区，2楼配备超长退税收银矩阵。",
+            diffHighlight: "如果说“圣水N店”是面向本土年轻人的概念策展旗舰，那么“明洞Town店”就是极致的“全球现金奶牛店”——主推面膜整盒量贩装与爆品堆头，坪效冠绝全韩。",
+            num: 9
           },
           {
-            period: "2000s–2014 · 拆迁拉锯与停滞",
-            desc: "曾一度被划入高层公寓重建区，因居民补偿与文保争议搁置十余年，街区逐渐老化成寂静的旧城区。"
+            id: "hbaf-myeongdong",
+            nameCn: "HBAF 杏仁主题百货 明洞1号总店",
+            nameKr: "바프 아몬드스토어 명동1호점",
+            nameEn: "HBAF Almond Store Myeongdong No.1",
+            lat: 37.56125,
+            lng: 126.98545,
+            labelDir: "bottom",
+            address: "首尔中区退溪路 123 High Harriet B1 (서울 중구 퇴계로 123)",
+            tags: [
+              "单品做成主题超市",
+              "40+猎奇口味杏仁",
+              "IP雕塑拍照引流"
+            ],
+            brandIntro: "原名吉林洋行（创立于1982年），2015年靠“蜂蜜黄油杏仁”起死回生并升级为 HBAF，将传统坚果彻底改造为快消潮玩伴手礼。",
+            storeDetail: "紧邻明洞地铁站出口的地下巨型仓储式旗舰店。摆放十几个两米高杏仁卡通雕塑，货架按彩虹色系陈列芥末、烤玉米、跳跳糖等40余种调味杏仁。",
+            diffHighlight: "品牌在明洞连开多家分店，但这间1号总店面积最大、IP装置最全，展示了如何把一颗普通扁桃仁做成M&M豆式的主题乐园。",
+            num: 10
           },
           {
-            period: "2016至今 · 青年商业拯救老韩屋",
-            desc: "随着重建计划取消与青年创业者涌入，主理人们保留韩屋木梁与青瓦，打通内院造景，将益善洞变成首尔坪效与拍照转化率最高的韩屋咖啡烘焙聚落。"
-          }
-        ],
-        categories: [
+            id: "daiso-myeongdong",
+            nameCn: "Daiso 大创 明洞站12层垂直总店",
+            nameKr: "다이소 명동역점",
+            nameEn: "Daiso Myeongdong Station 12F",
+            lat: 37.56085,
+            lng: 126.98665,
+            labelDir: "right",
+            address: "首尔中区退溪路 134-1 1~12楼 (서울 중구 퇴계로 134-1)",
+            tags: [
+              "12层垂直十元店奇观",
+              "平价美妆VT微针爆卖",
+              "电梯上12楼逐层逛下"
+            ],
+            brandIntro: "韩国国民级高性价比生活百货巨头（阿城大创），全场商品严控在500~5000韩元（约3~26元人民币）6个固定价格带，近年大举切入平价美妆与迪士尼联名文创。",
+            storeDetail: "整整12层楼的窄体高层建筑！标准巡店动线是坐电梯直达12楼，再顺着楼梯一层层往下逛：涵盖美妆护肤、动漫文具、宠物用品、露营工具、韩国传统伴手礼与食品全品类。",
+            diffHighlight: "全韩楼层数最多的垂直大创旗舰店，其“单层单品类高密度微缩陈列+垂直瀑布流客流动线”是小面积高层物业改造的经典案例。",
+            num: 11
+          },
           {
-            id: "coffee",
-            name: "咖啡与烘焙旺店（商圈核心支柱）",
-            shortName: "咖啡/烘焙",
-            color: "#059669",
-            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
-            isSpecial: false,
-            description: "益善洞没有大型连锁商超，这里所有的商业流量都由“强主题韩屋咖啡+单品烘焙”支撑。不强行塞入普通小店，以下两家是常年排队、最具商业研究价值的头部旺店：",
-            stores: [
-              {
-                num: 1,
-                id: "cheongsudang",
-                nameCn: "清水堂 (Cheongsudang) 益善总店",
-                nameKr: "청수당",
-                nameEn: "Cheongsudang Ikseon",
-                lat: 37.57388,
-                lng: 126.99052,
-                labelDir: "right",
-                address: "首尔钟路区敦化门路11那街 31-9 (서울 종로구 돈화문로11나길 31-9)",
-                tags: ["东方竹林庭院造景", "石槽流水", "舒芙蕾/抹茶拿铁"],
-                brandIntro: "韩国极具代表性的空间场景型咖啡品牌（隶属 Glow Seoul 空间设计集团体系，该团队也是益善洞温泉家、Soha Salt Pond 等多家排队王背后的操盘手）。",
-                storeDetail: "入口处铺设巨石步道、潺潺流水与茂密翠竹灯笼，顾客必须踏着水面石板过桥才能进店。室内将传统韩屋围合院落转化为热带苔藓温室，出品置于方形陶盒中的抹茶提拉米苏、石锅现烤舒芙蕾与滴滤咖啡。",
-                diffHighlight: "【与同品牌其他店差异】清水堂后续在新沙洞、延南洞及海外（含中国市场）开出了水疗风、画廊风等分店，但益善洞总店是其成名起家店，空间纵深感与“窄巷尽头忽见竹林溪流”的戏剧反差感最强。"
-              },
-              {
-                num: 2,
-                id: "mil-toast",
-                nameCn: "Mil Toast (밀토스트) 益善店",
-                nameKr: "밀토스트",
-                nameEn: "Mil Toast House",
-                lat: 37.57322,
-                lng: 126.98968,
-                labelDir: "left",
-                address: "首尔钟路区水标路28街 30-3 (서울 종로구 수표로28길 30-3)",
-                tags: ["竹笼蒸吐司单品王", "全明档吧台", "早C晚A高翻台"],
-                brandIntro: "专注“笼屉现蒸布里欧修吐司”与手冲咖啡的烘焙专门店，将亚洲传统蒸笼工艺与西式黄油吐司结合，开创了蒸吐司细分赛道。",
-                storeDetail: "保留了老韩屋高耸的木结构屋架并引入天窗自然光，一进门即是U型环绕式开放吧台，店员在热气腾腾的竹蒸笼前现蒸栗子吐司、玉米吐司，搭配装在复古玻璃瓶里的黄油杏仁奶。",
-                diffHighlight: "【与同品牌其他店差异】作为品牌唯一核心总店，U型吧台将“蒸笼冒热气”的视觉与香气直接推到街边橱窗，是典型的靠“感官剧场化明档”实现路人高截流率的门店模型。"
-              }
-            ]
+            id: "lotte-mart-zare",
+            nameCn: "Lotte 百货本馆B1精品食品馆",
+            nameKr: "롯데백화점 본점 식품관",
+            nameEn: "Lotte Department Store Main Food Avenue",
+            lat: 37.56475,
+            lng: 126.98165,
+            labelDir: "left",
+            address: "首尔中区南大门路 81 B1 (서울 중구 남대문로 81 지하1층)",
+            tags: [
+              "全韩客流第一百货B1",
+              "顶级韩牛与人参礼盒",
+              "网红烘焙快闪矩阵"
+            ],
+            brandIntro: "乐天集团零售大本营，其本馆B1食品馆近年来完成了耗资数百亿韩元的全面调改，将传统超市升级为“精品伴手礼+全球网红甜点首店矩阵”。",
+            storeDetail: "连接乙支路入口地铁站，集合了韩国顶级正官庄高丽参专柜、传统韩果名匠礼盒、现烤紫菜工坊以及每隔两周轮换一次的全韩排队烘焙快闪档口。",
+            diffHighlight: "相比首尔站乐天玛特（偏向大包装家庭日用量贩），明洞乐天本馆B1完全聚焦“高客单精品食杂礼盒+网红烘焙首店效应”。",
+            num: 12
+          },
+          {
+            id: "k-mecca-myeongdong",
+            nameCn: "KOREA MART 明洞K-Food超级市场",
+            nameKr: "코리아마트 명동점",
+            nameEn: "Korea Mart Myeongdong",
+            lat: 37.56205,
+            lng: 126.98465,
+            labelDir: "bottom",
+            address: "首尔中区明洞8那街 18 (서울 중구 명동8나길 18)",
+            tags: [
+              "旅游生鲜零食超",
+              "拉面墙与泡菜真空包装",
+              "退税打包一条龙"
+            ],
+            brandIntro: "专门针对明洞商圈酒店住客与海外采购商打造的新型K-Food主题超市。",
+            storeDetail: "店内将韩国上百种火鸡面、辛拉面做成顶天立地的“拉面图书馆”陈列墙，并提供冷藏宗家府泡菜的航空防爆铝箔打包服务。",
+            diffHighlight: "相比普通社区超市，这里砍掉了生猪牛羊肉等游客无法带走的品类，100%围绕“可托运回国的高毛利韩国食品”重构货架。",
+            num: 13
           }
         ]
       },
-
-      hannam: {
-        id: "hannam",
-        name: "汉南洞",
-        enName: "HANNAM-DONG",
-        status: "正式版待扩充",
-        center: [37.5365, 127.0012],
-        zoom: 15,
-        headline: "汉南洞：背靠财阀富人区的陡坡设计师街区与买手店聚落",
-        retailOverview: "【MVP 占位预览】汉南洞北靠南山与UN Village顶级富人区，拥有极高密度的独立设计师女装（Mardi Mercredi、emis、Rockfish）、小众沙龙香氛（Nonfiction）与黑胶艺术空间（Hyundai Card Vinyl & Plastic）。在确认当前 MVP 交互框架满意后，将为您完整填入汉南洞全量旺店。",
-        timeline: [
+      {
+        id: "cultural",
+        name: "品牌文创与IP杂货旺店",
+        shortName: "品牌文创",
+        color: "#9333ea",
+        badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
+        isSpecial: false,
+        description: "明洞是全球动漫IP、漫画主题店、K-POP音像周边与大型平价饰品文创的必争之地。",
+        stores: [
           {
-            period: "1970s–2000s · 外交使馆与豪宅区",
-            desc: "紧邻梨泰院与驻韩美军基地旧址，大量外国使馆与韩国顶级财阀家族宅邸聚集于此，形成低调高消费力的社区基底。"
+            id: "nyu-nyu-myeongdong",
+            nameCn: "NYU NYU 明洞四层旗舰店",
+            nameKr: "뉴뉴 명동점",
+            nameEn: "NYU NYU Myeongdong",
+            lat: 37.56295,
+            lng: 126.98385,
+            labelDir: "left",
+            address: "首尔中区明洞4街 22 1~4楼 (서울 중구 명동4길 22)",
+            tags: [
+              "东大门批发转零售标杆",
+              "四层饰品文创海洋",
+              "4楼自有设计杂货"
+            ],
+            brandIntro: "起源于东大门夜间饰品批发市场的超级配饰与生活方式品牌，凭借“批发级低价+2万款SKU海量陈列”成为全韩扩张最快的杂货集合店。",
+            storeDetail: "四层独栋巨型卖场：1~3楼陈列耳环、发抓、包袋挂件；4楼专门开辟为全新升级的“Another NYU NYU”家居文创与香氛选品层。",
+            diffHighlight: "东大门总店偏向深夜档口采购氛围，而明洞店在4楼首次引入了高颜值的自有生活方式杂货与休憩拍照区。",
+            num: 14
           },
           {
-            period: "2015至今 · K-Fashion 独立品牌第一街",
-            desc: "沿着梨泰院路北侧斜坡小巷，本土设计师品牌与精品咖啡店（Anthracite、Milestone）密集开出独栋旗舰店，成为客单价与买手采购转化率最高的街区。"
-          }
-        ],
-        categories: [
+            id: "wiggle-wiggle-myeongdong",
+            nameCn: "Wiggle Wiggle Zip 明洞旗舰店",
+            nameKr: "위글위글 집 명동",
+            nameEn: "Wiggle Wiggle Zip Myeongdong",
+            lat: 37.56335,
+            lng: 126.98425,
+            labelDir: "top",
+            address: "首尔中区明洞8街 24 (서울 중구 명동8길 24)",
+            tags: [
+              "多巴胺高饱和色彩美学",
+              "彩色微笑花朵IP",
+              "翻转房间拍照装置"
+            ],
+            brandIntro: "由韩国设计公司 Artshare 孵化的多巴胺色彩生活方式文创品牌，以标志性的“Wiggle Bear 小熊”与“Smile We Love 彩色太阳花”把手机壳、拖鞋、浴袍做成高溢价礼品。",
+            storeDetail: "整栋多巴胺色彩主题屋，设有上下颠倒的错觉拍照屋、巨型小熊气模，货架全按高饱和撞色陈列。",
+            diffHighlight: "相比岛山公园店（偏向复古洋房庭院感），明洞店位于步行街正中央，门头动态装置更具街头侵略性，且增设了明洞限定旅游纪念贴纸与行李牌专区。",
+            num: 15
+          },
           {
-            id: "coffee",
-            name: "咖啡与烘焙旺店（示例预览）",
-            shortName: "咖啡/烘焙",
-            color: "#059669",
-            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
-            isSpecial: false,
-            description: "MVP 框架演示节点，正式版将完整扩充汉南洞咖啡、商超与品牌文创全名单。",
-            stores: [
-              {
-                num: 1,
-                id: "anthracite-hannam",
-                nameCn: "Anthracite Coffee 汉南店",
-                nameKr: "앤트러사이트 한남점",
-                nameEn: "Anthracite Coffee Roasters Hannam",
-                lat: 37.53595,
-                lng: 127.00025,
-                labelDir: "right",
-                address: "首尔龙山区梨泰院路 240 (서울 용산구 이태원로 240)",
-                tags: ["韩国精品烘焙鼻祖", "三层通透街角楼", "文学命名豆单"],
-                brandIntro: "韩国第一代精品咖啡烘焙代表品牌，首店由合井洞废弃鞋厂改造而成，以深沉的工业美学和用文学家命名的拼配豆（如夏目漱石、威廉·布莱克）闻名业界。",
-                storeDetail: "位于汉南洞主干道核心街角的三层独栋建筑，一楼为巨型绿植环绕的冲煮吧台与咖啡豆零售架，二三楼拥有极佳的临街落地窗视野。",
-                diffHighlight: "【与同品牌其他店差异】相比合井店阴翳冷峻的废墟工厂感、西桥洞店的日式枯山水静谧院落，汉南店更具现代摩登通透感，且紧邻各大潮牌旗舰店，零售袋装豆与挂耳销量极高。"
-              }
-            ]
+            id: "line-friends-myeongdong",
+            nameCn: "LINE FRIENDS Square 明洞旗舰店",
+            nameKr: "라인프렌즈 스퀘어 명동",
+            nameEn: "LINE FRIENDS Square Myeongdong",
+            lat: 37.56265,
+            lng: 126.98525,
+            labelDir: "right",
+            address: "首尔中区明洞街 43 1~2楼 (서울 중구 명동길 43)",
+            tags: [
+              "布朗熊迎宾地标",
+              "NewJeans/BT21顶流联名",
+              "IP孵化转型代表"
+            ],
+            brandIntro: "隶属 Naver 旗下 IPX 公司的全球数字IP娱乐品牌，已从早期的布朗熊全面转向与 K-POP 顶流偶像（BTS 的 BT21、NewJeans 的 Bunini）深度共创虚拟形象。",
+            storeDetail: "双层潮流空间，门口保留巨型布朗熊打卡点，店内核心黄金展位全部用于高频轮换 K-POP 偶像联名快闪周边与互动大头贴机。",
+            diffHighlight: "相比圣水店（偏重快闪策展），明洞店是全球粉丝货品库存最全、常设偶像IP专柜最多的综合大店。",
+            num: 16
+          },
+          {
+            id: "butter-shop-myeongdong",
+            nameCn: "BUTTER Shop 明洞文创杂货旗舰店",
+            nameKr: "버터샵 명동점",
+            nameEn: "BUTTER Shop Myeongdong",
+            lat: 37.56225,
+            lng: 126.98495,
+            labelDir: "left",
+            address: "首尔中区明洞街 55 (서울 중구 명동길 55)",
+            tags: [
+              "衣恋集团旗下杂货王牌",
+              "黄油家族毛绒IP",
+              "烘焙托盘选品动线"
+            ],
+            brandIntro: "韩国时尚零售巨头衣恋集团（E-Land）打造的快时尚文创家居品牌，重点孵化了“黄油君（Butter Family）”、“牛奶猫”等自有软萌毛绒IP。",
+            storeDetail: "门头设计成巨大的黄色黄油块与吐司造型，店内主打1万~2万韩元价格带的毛绒挂件、搞怪生日派对眼镜、拍立得相册与居家睡衣。",
+            diffHighlight: "相比弘大地下商场店，明洞地面街铺旗舰店强化了“黄油烘焙工坊”主题陈列，让顾客拿面包托盘夹毛绒玩具，体验感极佳。",
+            num: 17
+          },
+          {
+            id: "music-korea-myeongdong",
+            nameCn: "Music Korea 明洞K-POP音像文创店",
+            nameKr: "뮤직코리아 명동점",
+            nameEn: "Music Korea Myeongdong",
+            lat: 37.56165,
+            lng: 126.98485,
+            labelDir: "bottom",
+            address: "首尔中区明洞8街 52 Nature Republic大厦 3楼 (서울 중구 명동8길 52 3F)",
+            tags: [
+              "Hanteo销量榜认证店",
+              "全韩偶像应援棒墙",
+              "小卡经济核心现场"
+            ],
+            brandIntro: "韩国历史悠久的正版K-POP唱片与官方周边零售连锁，所有销量实时计入韩国权威的 Hanteo 与 Circle 音乐排行榜。",
+            storeDetail: "位于全国地王大厦（Nature Republic明洞店）3楼，一整面墙摆满各大男团女团的发光应援手灯（Lightstick）、历代专辑、黑胶与特典小卡。",
+            diffHighlight: "全韩唯一开在最高地价建筑内的垂直音像店，是零售人实地观察“K-POP粉丝如何为一张随机小卡整箱购买实体CD”的窗口。",
+            num: 18
+          },
+          {
+            id: "dotori-forest-myeongdong",
+            nameCn: "橡子森林 (吉卜力官方周边店) 明洞店",
+            nameKr: "도토리숲 명동점",
+            nameEn: "Dotori Forest Ghibli Store Myeongdong",
+            lat: 37.56385,
+            lng: 126.98455,
+            labelDir: "top",
+            address: "首尔中区明洞8街 16 (서울 중구 명동8길 16)",
+            tags: [
+              "宫崎骏吉卜力官方授权",
+              "龙猫巴士等比还原",
+              "韩国限定款周边"
+            ],
+            brandIntro: "由韩国大元媒体（Daewon Media）引进运营的日本吉卜力工作室官方主题零售品牌。",
+            storeDetail: "将宫崎骏动画中的森林树洞与等比例龙猫巴士搬进明洞街头，售卖千与千寻、魔女宅急便、哈尔的移动城堡全系列文具、指偶与音乐盒。",
+            diffHighlight: "相比蚕室乐天店，明洞独立街铺店拥有更完整的森林橱窗造景及多款印有韩文元素的韩国独家限定帆布包。",
+            num: 19
           }
         ]
       },
-
-      myeongdong: {
-        id: "myeongdong",
-        name: "明洞",
-        enName: "MYEONG-DONG",
-        status: "正式版待扩充",
-        center: [37.5636, 126.9845],
-        zoom: 16,
-        headline: "明洞：历经百年的首尔第一商业中心与超级旅游零售复苏样本",
-        retailOverview: "【MVP 占位预览】明洞代表了韩国高流量旅游标品零售的极致效率：巨型零食主题超市（BBAF 杏仁乐园）、Olive Young 全球游客总店、以及新世界/乐天百货免税矩阵。确认 MVP 框架后将完整填充明洞标杆旺店。",
-        timeline: [
+      {
+        id: "fashion",
+        name: "潮流服饰与买手空间",
+        shortName: "潮流/买手",
+        color: "#e11d48",
+        badgeBg: "bg-rose-100 text-rose-900 border-rose-300",
+        isSpecial: false,
+        description: "近两年明洞最大的结构性变化，是韩国本土设计师潮牌与运动大店纷纷重返明洞包下整栋大楼。",
+        stores: [
           {
-            period: "朝鲜时代至近代 · 钟路以南住宅与明治町商业化",
-            desc: "从早期住宅区逐步演变为近代百货、银行总部与剧院林立的金融商业核心。"
+            id: "aland-myeongdong",
+            nameCn: "ALAND 明洞总店 (韩国买手集合店鼻祖)",
+            nameKr: "에이랜드 명동본점",
+            nameEn: "ALAND Myeongdong Main",
+            lat: 37.56355,
+            lng: 126.98345,
+            labelDir: "left",
+            address: "首尔中区明洞6街 30 1~4楼 (서울 중구 명동6길 30)",
+            tags: [
+              "韩国青年买手店黄埔军校",
+              "四层垂直铁艺空间",
+              "顶楼中古Vintage层"
+            ],
+            brandIntro: "2005年创立的韩国第一代多品牌潮流买手集合店，曾一手捧红了数百个韩国初代独立设计师品牌。",
+            storeDetail: "四层独栋老楼：1楼为新锐潮流配饰、香氛与美妆，2~3楼为男女街头服饰，4楼则是极具特色的 Vintage 中古服饰改造层。",
+            diffHighlight: "明洞这家是 ALAND 的全球旗舰总店，保留了品牌标志性的黑色铁艺楼梯与复古仓库陈列感。",
+            num: 20
           },
           {
-            period: "1990s–2026 · 全球游客消费晴雨表与大店化转型",
-            desc: "经历疫情洗牌后，明洞淘汰了同质化小摊贩，全面转向多国语言自助结账的超级零食商超、IP巨型旗舰店与百年教堂景观咖啡（Molto）。"
-          }
-        ],
-        categories: [
+            id: "marithe-myeongdong",
+            nameCn: "Marithé François Girbaud 明洞旗舰店",
+            nameKr: "마리떼 프랑소와 저버 명동플래그십스토어",
+            nameEn: "Marithe Francois Girbaud Myeongdong",
+            lat: 37.56275,
+            lng: 126.98445,
+            labelDir: "right",
+            address: "首尔中区明洞街 45 (서울 중구 명동길 45)",
+            tags: [
+              "法式老牌韩国重塑奇迹",
+              "高允真代言爆款",
+              "经典红白Logo牛仔"
+            ],
+            brandIntro: "原本是1972年创立的法国传奇牛仔品牌，被韩国时尚集团 Layer 引入并彻底重塑视觉与版型后，逆袭成为年销超千亿韩元的现象级新法式潮牌。",
+            storeDetail: "位于明洞中央街核心位置的古典法式木质门头独栋店，集中陈列最抢手的经典Logo卫衣、水洗牛仔帽与针织开衫。",
+            diffHighlight: "相比汉南洞首店，明洞店货品备货深度是全韩之最，专门设置快速试衣与退税通道以承接高密度旅游消费。",
+            num: 21
+          },
           {
-            id: "coffee",
-            name: "咖啡与景观旺店（示例预览）",
-            shortName: "咖啡/烘焙",
-            color: "#059669",
-            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
-            isSpecial: false,
-            description: "MVP 框架演示节点，正式版将补充明洞商超（HBAF、Olive Young 明洞总店等）与文创旺店。",
-            stores: [
-              {
-                num: 1,
-                id: "molto-myeongdong",
-                nameCn: "Molto 意式浓缩咖啡吧",
-                nameKr: "몰토 이탈리안 에스프레소바",
-                nameEn: "Molto Italian Espresso Bar",
-                lat: 37.56342,
-                lng: 126.98625,
-                labelDir: "left",
-                address: "首尔中区明洞街 73 3楼 (서울 중구 명동길 73 3F)",
-                tags: ["明洞圣堂正对露台", "Espresso Bar风潮代表", "借景天花板"],
-                brandIntro: "推动首尔意式浓缩吧（Espresso Bar）细分赛道破圈的头部品牌，主打站立或露台快饮的花式浓缩与牛角包。",
-                storeDetail: "位于明洞圣堂正对面的Page明洞大厦3楼弧形露台，将百年哥特式红砖教堂全景直接变成门店背景墙，视觉溢价极高。",
-                diffHighlight: "【商业选址启示】证明了在传统高租金旅游老商圈，只要找到不可复制的“城市地标借景位（3楼露台）”，无需一楼天价铺位也能成为全城流量引擎。"
-              }
-            ]
+            id: "emis-myeongdong",
+            nameCn: "emis 明洞旗舰店",
+            nameKr: "이미스 명동플래그십스토어",
+            nameEn: "emis Myeongdong Flagship",
+            lat: 37.56235,
+            lng: 126.98415,
+            labelDir: "bottom",
+            address: "首尔中区明洞8街 17 (서울 중구 명동8길 17)",
+            tags: [
+              "韩星人手一顶棒球帽",
+              "复古波点帆布包",
+              "超现实红色装置"
+            ],
+            brandIntro: "口号为“Every Moment Is Special”的韩国配饰黑马品牌，仅靠棒球帽、发箍与腋下包几款高频单品，从线上工作室一路做到全国开独栋。",
+            storeDetail: "一楼入口以极具视觉冲击力的鲜红色装置与巨型帽墙吸睛，全店像糖果屋一样按色系排列数百顶不同配色的弯檐帽。",
+            diffHighlight: "相比汉南洞隐蔽的小巷店，明洞旗舰店采用全敞开式街铺设计，路人无需推门即可直接拿取镜子试戴，进店转化率极高。",
+            num: 22
+          },
+          {
+            id: "musinsa-standard-myeongdong",
+            nameCn: "Musinsa Standard 明洞旗舰店",
+            nameKr: "무신사 스탠다드 명동",
+            nameEn: "Musinsa Standard Myeongdong",
+            lat: 37.56185,
+            lng: 126.98305,
+            labelDir: "left",
+            address: "首尔中区南大门路 90 1~3楼 (서울 중구 남대문로 90)",
+            tags: [
+              "韩国版优衣库",
+              "直播试衣间(Live Fitting Room)",
+              "神裤Slacks鼻祖"
+            ],
+            brandIntro: "韩国最大时尚电商平台 MUSINSA 推出的自有基本款服饰品牌，主打极致剪裁的西装裤（Slacks）、廓形大衣与高克重白T，直接对标优衣库与Zara。",
+            storeDetail: "紧邻乙支路入口的三层巨型旗舰店。店内不仅有环绕式动态数字大屏，更首创了配备专业环形补光灯与手机支架的“直播打卡试衣间”。",
+            diffHighlight: "明洞店专门强化了针对亚洲游客的“无季节常青基本款”陈列与线上线下同价扫码调货系统。",
+            num: 23
+          },
+          {
+            id: "matin-kim-myeongdong",
+            nameCn: "Matin Kim 明洞旗舰店",
+            nameKr: "마뗑킴 명동플래그십스토어",
+            nameEn: "Matin Kim Myeongdong Flagship",
+            lat: 37.56305,
+            lng: 126.98475,
+            labelDir: "top",
+            address: "首尔中区明洞街 35 1~3楼 (서울 중구 명동길 35)",
+            tags: [
+              "铁牌钱包现象级爆品",
+              "废土甜酷风代表",
+              "三层独栋旗舰"
+            ],
+            brandIntro: "由博主金大仁创立、后获韩国品牌孵化巨头 Hago Haus 投资的顶流设计师品牌，凭借一款带金属铭牌的褶皱链条包与铁牌卡包创下年销破千亿韩元纪录。",
+            storeDetail: "2024年全新揭幕的明洞三层独栋旗舰店，1楼专攻高周转铁牌配饰与包袋，2楼为全线成衣，3楼涵盖高端支线。",
+            diffHighlight: "相比圣水洞首店，明洞店首次把男装支线与高端胶囊系列完整并入同一栋三层空间，是其全球化扩张的标准样板店。",
+            num: 24
           }
         ]
       },
-
-      hongdae: {
-        id: "hongdae",
-        name: "弘大",
-        enName: "HONGDAE / YEONNAM",
-        status: "正式版待扩充",
-        center: [37.5575, 126.9245],
-        zoom: 15,
-        headline: "弘大与延南洞：艺术学院派街头亚文化与Z世代IP文创试验田",
-        retailOverview: "【MVP 占位预览】以弘益大学美术学院为原点，向北延伸至京义线林荫道与延南洞。这里是韩国文创杂货（Object、Kakao Friends旗舰店）、复古主题咖啡与平价街头服饰周转最快的年轻力商圈。确认 MVP 后将补充完整20店级别清单。",
-        timeline: [
+      {
+        id: "special",
+        name: "商圈独有特色：百年百货地标与演艺剧场",
+        shortName: "特色：百货与剧场",
+        color: "#d97706",
+        badgeBg: "bg-amber-100 text-amber-900 border-amber-300",
+        isSpecial: true,
+        description: "明洞区别于首尔所有新兴商圈的护城河，在于其不可复制的“1930年代近代百货总店建筑群”与“高商业化驻场演出剧场”。",
+        stores: [
           {
-            period: "1990s · 独立音乐俱乐部与美术生工作室",
-            desc: "依托弘益大学美院资源，地下乐队、涂鸦与独立出版物在此聚集。"
+            id: "shinsegae-main",
+            nameCn: "新世界百货 明洞本馆 (The Heritage)",
+            nameKr: "신세계백화점 본점",
+            nameEn: "Shinsegae Department Store Main Branch",
+            lat: 37.56092,
+            lng: 126.98105,
+            labelDir: "bottom",
+            address: "首尔中区小公路 63 (서울 중구 소공로 63)",
+            tags: [
+              "韩国最早百货建筑(1930)",
+              "裸眼3D巨幕外立面",
+              "顶层大师雕塑花园"
+            ],
+            brandIntro: "新世界集团旗舰百货品牌，与乐天、现代并列韩国三大百货巨头，以顶奢招商能力与高端食品馆著称。",
+            storeDetail: "由1930年建成的文艺复兴式古建筑“本馆”与现代扩建的“新馆”组成。外立面改造为巨型裸眼3D新媒体艺术屏（Shinsegae Square），每年圣诞季灯光秀吸引百万人次驻足，顶层设有杰夫·昆斯等大师真迹的空中雕塑公园。",
+            diffHighlight: "江南店追求单店销售额世界第一，釜山店追求体量第一，而明洞本馆是全韩唯一保留1930年代历史古建肌理、将历史博物馆属性与重奢零售融合的“1号母本馆”。",
+            num: 25
           },
           {
-            period: "2015至今 · 延南洞扩圈与IP文创大型化",
-            desc: "主街趋向大型潮牌与IP旗舰店，而延南洞（Yeonnam-dong）住宅小巷则演化出高密度绘本风、庭院风独立咖啡与插画师杂货店。"
-          }
-        ],
-        categories: [
-          {
-            id: "cultural",
-            name: "品牌文创与杂货旺店（示例预览）",
-            shortName: "品牌文创",
-            color: "#9333ea",
-            badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
-            isSpecial: false,
-            description: "MVP 框架演示节点，正式版将完整展开弘大/延南洞的咖啡、商超与文创矩阵。",
-            stores: [
-              {
-                num: 1,
-                id: "object-seogyo",
-                nameCn: "Object 西桥洞总店",
-                nameKr: "오브젝트 서교점",
-                nameEn: "Object Seogyo Flagship",
-                lat: 37.55582,
-                lng: 126.92968,
-                labelDir: "right",
-                address: "首尔麻浦区卧牛山路35街 13 (서울 마포구 와우산로35길 13)",
-                tags: ["韩国插画文创孵化器", "四层策展空间", "DIY手作联动"],
-                brandIntro: "韩国最具影响力的独立创作者与插画周边平台型文创集合品牌，类似“线下实体版的文创买手市集”，帮助上百个韩国本土小插画师实现商业化变现。",
-                storeDetail: "四层独栋空间，每1~2个月更换一次主题策展，涵盖毛绒挂件、手账贴纸、帆布包 DIY 烫印与独立出版物，年轻女性客群复购率极高。",
-                diffHighlight: "【与同品牌其他店差异】西桥洞店是 Object 规模最大、展陈最完整的四层旗舰总店，相比圣水或釜山分店，这里的首发联名展与创作者签售活动最为密集。"
-              }
-            ]
-          }
-        ]
-      },
-
-      gangnam: {
-        id: "gangnam",
-        name: "江南",
-        enName: "GANGNAM / DOSAN",
-        status: "正式版待扩充",
-        center: [37.5242, 127.0365],
-        zoom: 15,
-        headline: "江南（岛山公园/新沙）：汉江以南财富高地与高奢旗舰店丛林",
-        retailOverview: "【MVP 占位预览】以岛山公园（Dosan Park）与新沙洞林荫道为核心，聚集了 Gentle Monster 的五层艺术实验场 Haus Dosan（含 Nudake 艺术甜点）、伦敦贝果博物馆岛山店以及各大国际大牌建筑级旗舰店。确认 MVP 后将补充完整清单。",
-        timeline: [
-          {
-            period: "1970s–1980s · 永东开发计划与精英南迁",
-            desc: "首尔政府推动汉江南岸开发，名校学区与现代企业总部南迁，奠定高净值消费人群基础。"
-          },
-          {
-            period: "2020至今 · 岛山公园取代传统林荫道成为潮奢核心",
-            desc: "商业重心从新沙洞主街向岛山公园周边的静谧街区转移，诞生了以 Haus Dosan 为代表的多品牌复合实验大楼。"
-          }
-        ],
-        categories: [
-          {
-            id: "coffee",
-            name: "咖啡与艺术烘焙旺店（示例预览）",
-            shortName: "咖啡/烘焙",
-            color: "#059669",
-            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
-            isSpecial: false,
-            description: "MVP 框架演示节点，正式版将完整展开江南商圈。",
-            stores: [
-              {
-                num: 1,
-                id: "nudake-dosan",
-                nameCn: "NUDAKE 岛山旗舰店 (Haus Dosan)",
-                nameKr: "누데이크 하우스도산",
-                nameEn: "NUDAKE Haus Dosan",
-                lat: 37.52538,
-                lng: 127.03568,
-                labelDir: "right",
-                address: "首尔江南区狎鸥亭路46街 50 B1 (서울 강남구 압구정로46길 50 B1)",
-                tags: ["先锋艺术甜点", "抹茶熔岩羊角Peak", "展览式点单模式"],
-                brandIntro: "Gentle Monster 母公司 IICOMBINED 旗下的跨界艺术甜点与咖啡品牌（名称源自 New + Different + Cake），将雕塑艺术与烘焙结合。",
-                storeDetail: "位于 Haus Dosan 大楼地下一层。店内不设常规冰柜，而是将每一款甜点像美术馆雕塑一样摆在黑色长桌上并配以说明牌，顾客拿取条形码小票去吧台结账取餐。",
-                diffHighlight: "【与同品牌其他店差异】圣水店以“巨型微观餐厅”为主题，新沙店主打“牛角包怪兽主题”，而岛山店位于集团总部级复合楼 Haus Dosan 内（楼上即 Gentle Monster 与 Tamburins），是唯一能一次性完整考察该集团“眼镜+香氛+甜点”三大业态协同动线的门店。"
-              }
-            ]
+            id: "myeongdong-nanta-theater",
+            nameCn: "明洞乱打秀专用剧场",
+            nameKr: "명동난타극장",
+            nameEn: "Myeongdong NANTA Theatre",
+            lat: 37.56395,
+            lng: 126.98375,
+            labelDir: "left",
+            address: "首尔中区明洞街 26 UNESCO大厦 3楼 (서울 중구 명동길 26)",
+            tags: [
+              "韩国最成功无语言商业剧场",
+              "餐饮道具打击乐",
+              "演艺带动周边零售"
+            ],
+            brandIntro: "自1997年首演以来累计观众破1500万人次的韩国头号文化旅游演艺品牌，以厨房刀案与锅碗瓢盆为乐器，打破跨国语言障碍。",
+            storeDetail: "位于明洞核心 UNESCO 大厦内，剧场一楼与周边动线完美衔接化妆品与伴手礼街铺，每天多场演出源源不断为明洞夜经济输送高消费客流。",
+            diffHighlight: "明洞剧场是乱打秀在全球历史最久、上座率最高的旗舰驻场大本营，展示了文旅商业街区如何用“无语言高频驻场秀”锁定游客晚间停留时长。",
+            num: 26
           }
         ]
       }
-    };
+    ]
+  },
+  "hongdae": {
+    id: "hongdae",
+    name: "弘大",
+    enName: "HONGDAE / YEONNAM",
+    status: "27家核心旺店",
+    center: [
+      37.5578,
+      126.9242
+    ],
+    zoom: 14,
+    kakaoLevel: 5,
+    headline: "弘大与延南洞：艺术学院派街头亚文化与Z世代IP文创试验田",
+    retailOverview: "弘大商圈已从早期的大学周边夜市，裂变为“弘大主街（大型IP与潮流数码旗舰店）+ 西桥洞/合井洞（独立文创与工业烘焙）+ 延南洞（京义线森林公园旁的复古独栋咖啡聚落）”三大板块。这里是全韩国Z世代客流密度最高、插画文创IP孵化最快、视觉主题咖啡竞争最激烈的商圈。",
+    timeline: [
+      {
+        period: "1950s–1990s · 美术学院与地下独立音乐摇篮",
+        desc: "依托韩国最高艺术学府弘益大学（Hongik University）美术与设计系，周边聚拢了大量画材店、独立乐队Livehouse与先锋青年工作室。"
+      },
+      {
+        period: "2000s–2014 · 街头时尚步行街与夜生活中心",
+        desc: "平价买手店、街头艺人表演区与俱乐部兴起，主街租金飙升，促使独立创作者向北侧的延南洞（Yeonnam-dong）及南侧的合井洞外溢。"
+      },
+      {
+        period: "2015至今 · 京义线林荫道改造与IP/主题咖啡大爆发",
+        desc: "废弃铁路改造为“京义线书街与森林公园（Yeontral Park）”，延南洞老旧红砖民居被改造成数十家英式庄园风、复古美式风烘焙咖啡店，同时主街诞生了Kakao Friends等千坪级IP大店。"
+      }
+    ],
+    categories: [
+      {
+        id: "coffee",
+        name: "咖啡与烘焙旺店",
+        shortName: "咖啡/烘焙",
+        color: "#059669",
+        badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+        isSpecial: false,
+        description: "弘大与延南洞的咖啡馆代表了韩国“重度软装造景派（欧洲古堡/复古小木屋）”与“特种咖啡烘焙派”的双峰极值。",
+        stores: [
+          {
+            id: "cafe-layered-yeonnam",
+            nameCn: "Cafe Layered 延南店",
+            nameKr: "카페 레이어드 연남점",
+            nameEn: "Cafe Layered Yeonnam",
+            lat: 37.56495,
+            lng: 126.92415,
+            labelDir: "top",
+            address: "首尔麻浦区延禧路 25-20 (서울 마포구 연희로 25-20)",
+            tags: [
+              "伦敦贝果博物馆同门前身",
+              "英式复古司康海",
+              "红砖双层洋房"
+            ],
+            brandIntro: "由传奇主理人 Ryo 团队打造的英式复古烘焙咖啡品牌——该团队随后接连孵化出全韩现象级排队王“伦敦贝果博物馆”与“Artist Bakery”。",
+            storeDetail: "由延南洞老式双层红砖住宅改造而成。一进门中央长桌以极具冲击力的“丰盛堆叠感”摆满数十种造型可爱的司康（Scone）与重油蛋糕。",
+            diffHighlight: "安国店是韩屋平房结构，现代百货店是商场开放档口，而延南洞店是完整保留“双层欧式老洋房住宅感 + 露台窗景”的代表作。",
+            num: 1
+          },
+          {
+            id: "parole-and-langue",
+            nameCn: "Parole & Langue 延南甜品派专门店",
+            nameKr: "파롤앤랑그",
+            nameEn: "Parole & Langue",
+            lat: 37.56425,
+            lng: 126.92305,
+            labelDir: "left",
+            address: "首尔麻浦区成美山路29安街 8 (서울 마포구 성미산로29안길 8)",
+            tags: [
+              "单品深挖：法式咸甜派",
+              "红砖庭院独栋",
+              "整颗玉米/栗子派"
+            ],
+            brandIntro: "延南洞单品细分化烘焙的代表品牌，专注于将传统美式/法式派（Pie）做出高度食材可视化。",
+            storeDetail: "带独立前院的红砖住宅改造店。店内仅聚焦6~7款高颜值手工派：直接将整块烤玉米、整颗糖渍栗子、罗勒番茄或柿子堆叠在酥皮塔壳上。",
+            diffHighlight: "无连锁分店，展示了在竞争白热化的延南洞咖啡街，如何靠“单一烘焙品类（Pie）+ 原材料极致外露”实现差异化突围。",
+            num: 2
+          },
+          {
+            id: "fritz-coffee-dohwa",
+            nameCn: "Fritz Coffee Company 桃花总店",
+            nameKr: "프릳츠 도화점",
+            nameEn: "Fritz Coffee Company Dohwa",
+            lat: 37.54165,
+            lng: 126.94895,
+            labelDir: "right",
+            address: "首尔麻浦区新仓路2街 17 (서울 마포구 새창로2길 17)",
+            tags: [
+              "韩国复古海豹IP鼻祖",
+              "韩屋改造1号总店",
+              "冠军咖啡师+烘焙师联手"
+            ],
+            brandIntro: "2014年由韩国咖啡师大赛冠军朴近河、寻豆师金秉希及法式烘焙师许敏洙等6位行业老炮联手创立，以“复古韩文字体 + 戴水手帽的小海豹LOGO”成为全韩咖啡IP商业化典范。",
+            storeDetail: "将一栋带前院的传统韩屋与现代二层小楼嫁接。前院设有户外遮阳伞座，一楼为紧凑的现烤面包柜与意式吧台。",
+            diffHighlight: "虽然 Fritz 在苑西洞、良才洞开了分店，但麻浦桃花店是品牌的1号发源总店，楼上直接连接品牌的培训与烘焙实验室。",
+            num: 3
+          },
+          {
+            id: "anthracite-hapjeong",
+            nameCn: "Anthracite Coffee 合井1号总店",
+            nameKr: "앤트러사이트 합정점",
+            nameEn: "Anthracite Coffee Hapjeong",
+            lat: 37.54715,
+            lng: 126.91825,
+            labelDir: "left",
+            address: "首尔麻浦区土亭路5街 10 (서울 마포구 토정로5길 10)",
+            tags: [
+              "全韩废墟咖啡始祖(2010)",
+              "旧皮鞋厂改造",
+              "传送带改造吧台"
+            ],
+            brandIntro: "韩国精品咖啡浪潮的奠基者，早在2010年就率先在首尔尝试工业遗产改造咖啡馆。",
+            storeDetail: "前身为合井洞废弃制鞋厂，店内直接用当年制鞋车间的铁质流水线传送带改造成冲煮吧台，地面保留原始裂纹水泥与生锈铁门。",
+            diffHighlight: "相比汉南洞店的明亮摩登、西桥洞店的日式木造庭院，合井店是品牌的创世1号店，也是整个韩国“废墟工业风咖啡”早于圣水洞的历史源头。",
+            num: 4
+          },
+          {
+            id: "anthracite-seogyo",
+            nameCn: "Anthracite Coffee 西桥洞静音庭院店",
+            nameKr: "앤트러사이트 서교점",
+            nameEn: "Anthracite Coffee Seogyo",
+            lat: 37.55535,
+            lng: 126.91685,
+            labelDir: "left",
+            address: "首尔麻浦区世界杯路12街 11 (서울 마포구 월드컵로12길 11)",
+            tags: [
+              "不设背景音乐的静音咖啡",
+              "百年日式三层木构洋房",
+              "枯山水竹林庭院"
+            ],
+            brandIntro: "Anthracite 探索“感官剥夺与极致专注”的概念门店。",
+            storeDetail: "改造自西桥洞一栋带大型私家花园的三层近代豪宅。全店几乎不播放任何商业背景音乐，顾客在榻榻米与原木长桌旁只能听到窗外风吹竹林声与手冲滴水声。",
+            diffHighlight: "与同品牌其他重工业门店截然相反，西桥店走的是“极致东方禅意与静音阅读”路线，是考察同一咖啡品牌如何做极端空间分化的最佳样本。",
+            num: 5
+          },
+          {
+            id: "thanks-oat-yeonnam",
+            nameCn: "Thanks, Oat 延南手工酸奶碗专门店",
+            nameKr: "땡스오트 연남",
+            nameEn: "Thanks Oat Yeonnam",
+            lat: 37.56665,
+            lng: 126.92125,
+            labelDir: "top",
+            address: "首尔麻浦区圣美山路23街 68 (서울 마포구 성미산로23길 68)",
+            tags: [
+              "韩国希腊酸奶热潮起点",
+              "无水高醇厚酸奶",
+              "宠物友好森林露台"
+            ],
+            brandIntro: "推动韩国“厚切希腊酸奶碗（Greek Yogurt Bowl）+ 手工烘焙燕麦（Granola）”取代传统早午餐的开创性品牌。",
+            storeDetail: "紧邻京义线森林公园北段的原木小木屋，采用大面积折叠木窗，主打像冰淇淋球一样绵密紧实的无乳清手工酸奶搭配无花果、蜂巢与可可燕麦。",
+            diffHighlight: "相比安国韩屋分店，延南店是品牌的1号起家店，正对公园草坪，清晨即坐满牵狗散步的社区居民与年轻游客。",
+            num: 6
+          },
+          {
+            id: "pie-in-the-shop",
+            nameCn: "Pie In The Shop 延南水泥工业派店",
+            nameKr: "파이인더샵",
+            nameEn: "Pie In The Shop Yeonnam",
+            lat: 37.56255,
+            lng: 126.92385,
+            labelDir: "right",
+            address: "首尔麻浦区成美山路27街 26 (서울 마포구 성미산로27길 26)",
+            tags: [
+              "独栋混凝土极简风",
+              "高耸切角芝士派",
+              "庭院竹林水景"
+            ],
+            brandIntro: "延南洞年轻派烘焙新贵，将粗野主义水泥工业风与高饱和度美式甜品派结合。",
+            storeDetail: "改造自双层带院住宅，故意敲掉部分二楼楼板形成挑高天井，售卖多达20种厚切奶油派、抹茶甘纳许派与咸味肉酱派。",
+            diffHighlight: "单店独立运营，其“外立面极度冷淡（灰色水泥+绿竹） vs 甜品柜极度丰盛”的冲突美学非常适合国内烘焙独立店借鉴。",
+            num: 7
+          },
+          {
+            id: "GARET-yeonnam",
+            nameCn: "Margaret 延南复古阁楼烘焙屋",
+            nameKr: "마가렛 연남",
+            nameEn: "Cafe Margaret Yeonnam",
+            lat: 37.56345,
+            lng: 126.92555,
+            labelDir: "right",
+            address: "首尔麻浦区东桥路38街 14 (서울 마포구 동교로38길 14)",
+            tags: [
+              "欧洲老奶奶阁楼造景",
+              "方块千层酥皮蛋糕",
+              "全屋古董软装"
+            ],
+            brandIntro: "专注于将住宅改造为“沉浸式欧洲电影片场”的烘焙咖啡品牌，目前已反向输出至海外市场。",
+            storeDetail: "双层独栋绿植洋房，二楼阁楼铺满碎花壁纸、古董留声机与蕾丝窗帘，一楼中央木桌摆满撒糖粉的方块水果塔与黄油饼干。",
+            diffHighlight: "延南洞总店是品牌视觉体系的母本，展示了“重度软装堆叠流”咖啡馆如何用低成本二手古董家具营造高溢价拍照空间。",
+            num: 8
+          },
+          {
+            id: "tailor-coffee-yeonnam",
+            nameCn: "Tailor Coffee 延南精品烘焙店",
+            nameKr: "테일러커피 연남1호점",
+            nameEn: "Tailor Coffee Yeonnam",
+            lat: 37.56125,
+            lng: 126.92525,
+            labelDir: "bottom",
+            address: "首尔麻浦区东桥路 246 (서울 마포구 동교로 246)",
+            tags: [
+              "弘大15年长青精品咖啡",
+              "Cream Mocha招牌",
+              "绅士裁缝店主题"
+            ],
+            brandIntro: "自2009年扎根弘大商圈的老牌精品咖啡烘焙商，正如店名“裁缝（Tailor）”所示，主打如定制西装般考究的咖啡豆烘焙与厚奶油摩卡（Cream Mocha）。",
+            storeDetail: "深蓝色英伦绅士风门头，店内吧台选用深色胡桃木与黄铜浓缩机，是全首尔奶油咖啡（Einspanner/Cream Mocha）品类的教科书。",
+            diffHighlight: "相比新沙店和现代百货店，延南/弘大店是品牌的根基所在，在网红店平均寿命不足两年的弘大商圈长红超过15年。",
+            num: 9
+          },
+          {
+            id: "quiche-mignon-hapjeong",
+            nameCn: "Quiche Mignon 合井法式咸派塔专门店",
+            nameKr: "키쉬미뇽 합정점",
+            nameEn: "Quiche Mignon Hapjeong",
+            lat: 37.54985,
+            lng: 126.91955,
+            labelDir: "left",
+            address: "首尔麻浦区杨花路6街 35 (서울 마포구 양화로6길 35)",
+            tags: [
+              "法式洛林咸派专门店",
+              "阶梯式剧场看台座",
+              "百种水果蛋挞陈列"
+            ],
+            brandIntro: "专攻法式咸派（Quiche）与精致水果塔（Tart）的烘焙连锁品牌。",
+            storeDetail: "一进门长达8米的玻璃冷柜整齐排列数十种皇冠造型的草莓塔、无花果塔与菠菜培根咸派；二楼设有极具空间效率的木质阶梯看台座。",
+            diffHighlight: "合井店是品牌的旗舰大店，其“一楼高密度冷柜视觉轰炸 + 二楼阶梯式紧凑座位”极大地提升了单位面积载客量。",
+            num: 10
+          }
+        ]
+      },
+      {
+        id: "supermarket",
+        name: "商超与复合潮流卖场",
+        shortName: "商超/集合店",
+        color: "#2563eb",
+        badgeBg: "bg-blue-100 text-blue-900 border-blue-300",
+        isSpecial: false,
+        description: "弘大的大型零售卖场以“二次元谷子经济、街头文化综合体与大型生鲜折扣超”为核心。",
+        stores: [
+          {
+            id: "ak-plaza-hongdae",
+            nameCn: "AK PLAZA 弘大店 (二次元谷子百货)",
+            nameKr: "AK플라자 홍대점",
+            nameEn: "AK PLAZA Hongdae",
+            lat: 37.55755,
+            lng: 126.92595,
+            labelDir: "right",
+            address: "首尔麻浦区杨花路 188 (서울 마포구 양화로 188)",
+            tags: [
+              "传统百货二次元转型样本",
+              "Animate/一番赏大本营",
+              "机场快线直通"
+            ],
+            brandIntro: "爱敬集团旗下的连锁百货商超品牌。弘大店果断砍掉传统熟龄女装，全面转型为韩国“谷子经济（Subculture & Anime IP）”垂直主题商业体。",
+            storeDetail: "位于弘大入口站正上方（1~5楼）。整栋商场高密度集结了日本最大动漫周边连锁 Animate、一番赏专门店、Sanrio三丽鸥、宝可梦快闪店及5楼动漫主题咖啡厅。",
+            diffHighlight: "相比水原店等常规家庭百货，AK PLAZA 弘大店是全韩“老百货靠二次元与IP潮玩实现逆势爆满”的最经典调改案例。",
+            num: 11
+          },
+          {
+            id: "kt-and-g-sangsangmadang",
+            nameCn: "KT&G 想象庭院 (弘大复合文化设计商超)",
+            nameKr: "KT&G 상상마당 홍대",
+            nameEn: "KT&G Sangsangmadang Hongdae",
+            lat: 37.55095,
+            lng: 126.92115,
+            labelDir: "left",
+            address: "首尔麻浦区 어울마당로 65 (서울 마포구 어울마당로 65)",
+            tags: [
+              "韩国烟草巨头跨界标杆",
+              "1楼高毛利设计百货",
+              "地下独立影院+Livehouse"
+            ],
+            brandIntro: "由韩国烟草人参公社（KT&G）斥资打造的企业社会责任与青年文化孵化综合体，是弘大街头文化的精神图腾。",
+            storeDetail: "地上7层+地下4层的几何形地标大楼：1~2楼是全韩知名的“Design Square（原创设计师杂货百货）”，售卖上千款韩国新锐工业设计小家电、文具与伴手礼；地下为独立电影院与Livehouse；顶层为画廊与咖啡厅。",
+            diffHighlight: "相比釜山或春川分馆，弘大馆是1号首创总馆，展示了大型国企如何通过“1~2楼高坪效文创商超反哺整栋楼的地下音乐与独立艺术生态”。",
+            num: 12
+          },
+          {
+            id: "homeplus-hapjeong",
+            nameCn: "Homeplus 合井Mecenatpolis大型商超",
+            nameKr: "홈플러스 합정점",
+            nameEn: "Homeplus Hapjeong",
+            lat: 37.55025,
+            lng: 126.91385,
+            labelDir: "bottom",
+            address: "首尔麻浦区杨花路 45 Mecenatpolis B2 (서울 마포구 양화로 45 지하2층)",
+            tags: [
+              "韩国三大大型折扣大卖场",
+              "自有品牌Simplus",
+              "熟食与精酿啤酒矩阵"
+            ],
+            brandIntro: "原由英国乐购（Tesco）与三星合资创立、现为韩国三大大型综合大卖场（Hypermarket）巨头之一，近期全面推进“Homeplus Mega Food Market（生鲜烘焙强化型大卖场）”调改。",
+            storeDetail: "位于合井站大型商业综合体地下2层。入口直接以超大型现烤烘焙坊、韩式炸鸡熟食岛（Deli）与整排世界精酿啤酒冷柜切入，弱化非食百货，强攻一日三餐。",
+            diffHighlight: "非常适合国内传统大卖场从业者考察韩国“Mega Food Market”调改模型——看传统大超如何靠高性价比熟食烘焙对抗便利店与电商。",
+            num: 13
+          },
+          {
+            id: "olive-young-hongdae-town",
+            nameCn: "Olive Young 弘大Town青年旗舰店",
+            nameKr: "올리브영 홍대타운",
+            nameEn: "Olive Young Hongdae Town",
+            lat: 37.55545,
+            lng: 126.92315,
+            labelDir: "right",
+            address: "首尔麻浦区弘益路6街 57 1~3楼 (서울 마포구 홍익로6길 57)",
+            tags: [
+              "三层青年潮流美妆旗舰",
+              "男士理容专区",
+              "独立彩妆品牌首发地"
+            ],
+            brandIntro: "Olive Young 针对20岁出头大学与潮流客群打造的区域中心店（Town级门店）。",
+            storeDetail: "2023年全新揭幕的三层独栋大店：1楼完全让渡给当月最火的联名快闪展台，2楼主打高饱和度独立彩妆（Rom&nd、fwee、Clio）与男士潮流护肤专区，3楼为基础护肤与健康零食。",
+            diffHighlight: "相比明洞Town店（满眼都是整盒面膜与外国游客），弘大Town店是韩国本土Z世代美妆趋势的风向标，男士护肤与小众彩妆占比明显更高。",
+            num: 14
+          }
+        ]
+      },
+      {
+        id: "cultural",
+        name: "品牌文创与IP杂货旺店",
+        shortName: "品牌文创",
+        color: "#9333ea",
+        badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
+        isSpecial: false,
+        description: "弘大/西桥洞/延南洞是全韩国独立插画师、手账杂货与治愈系IP衍生品的最高密度发源地。",
+        stores: [
+          {
+            id: "object-seogyo",
+            nameCn: "Object 西桥洞四层总店",
+            nameKr: "오브젝트 서교점",
+            nameEn: "Object Seogyo Flagship",
+            lat: 37.55582,
+            lng: 126.92968,
+            labelDir: "bottom",
+            address: "首尔麻浦区卧牛山路35街 13 (서울 마포구 와우산로35길 13)",
+            tags: [
+              "韩国插画文创孵化器",
+              "四层策展空间",
+              "DIY布贴烫印体验"
+            ],
+            brandIntro: "韩国最具影响力的独立创作者与插画周边平台型文创集合品牌，帮助数以百计的韩国独立插画师实现线下商业化。",
+            storeDetail: "四层独栋空间：1楼为当季主推艺术家快闪特展，2~3楼陈列上百个独立文创品牌的贴纸、毛绒挂件、明信片，并设有“自选刺绣布贴 DIY 挂件/帆布包区”。",
+            diffHighlight: "西桥洞店是 Object 规模最大、展陈最完整的四层旗舰总店，每季度首发特展均在此落地。",
+            num: 15
+          },
+          {
+            id: "kakao-friends-hongdae",
+            nameCn: "Kakao Friends 弘大三层旗舰店",
+            nameKr: "카카오프렌즈 홍대플래그십스토어",
+            nameEn: "Kakao Friends Hongdae Flagship",
+            lat: 37.55635,
+            lng: 126.92365,
+            labelDir: "left",
+            address: "首尔麻浦区杨花路 162 (서울 마포구 양화로 162)",
+            tags: [
+              "三层千坪级IP大店",
+              "春植Choonsik专区",
+              "联名主题咖啡厅"
+            ],
+            brandIntro: "韩国国民社交软件 KakaoTalk 旗下的超级表情包IP衍生品品牌（拥有 Ryan 莱恩狮、Choonsik 春植猫等顶流角色）。",
+            storeDetail: "位于弘大入口站8/9号出口旁黄金街角，共3层超1100㎡。1~2楼重金打造了“春植猫沉浸式故事场景区”，3楼为联名主题咖啡厅。",
+            diffHighlight: "在江南旗舰店闭店调整后，弘大店成为品牌在首尔规模最大、场景更新最快的头号旗舰店。",
+            num: 16
+          },
+          {
+            id: "made-by-yeonnam",
+            nameCn: "MADE BY 延南独立手账文具博物馆",
+            nameKr: "메이드바이 연남",
+            nameEn: "MADE BY Yeonnam Stationery",
+            lat: 37.56215,
+            lng: 126.92615,
+            labelDir: "right",
+            address: "首尔麻浦区延禧路1街 38 (서울 마포구 연희로1길 38)",
+            tags: [
+              "手账控朝圣地",
+              "按作者分区陈列架",
+              "火漆印章与胶带海"
+            ],
+            brandIntro: "专注于韩国本土独立插画师贴纸（Dakku手账文化）、便签本与桌面文具的垂直选品连锁。",
+            storeDetail: "位于延南洞住宅小巷的木质温馨店铺，店内像图书馆检索目录一样，为每一位签约插画师设立专属格架，陈列上万款异形闪粉贴纸与手机气囊支架。",
+            diffHighlight: "相比Object偏重生活方式与布艺，MADE BY 100%深耕“纸品、贴纸与手账文具”，坪效极高且零库存损耗。",
+            num: 17
+          },
+          {
+            id: "beok-yeonnam",
+            nameCn: "Maybell / 延南复古杂货选品店 (망원/연남 소품샵)",
+            nameKr: "메이벨 연남",
+            nameEn: "Maybell Vintage & Zakka Yeonnam",
+            lat: 37.56315,
+            lng: 126.92485,
+            labelDir: "left",
+            address: "首尔麻浦区东桥路46街 42 (서울 마포구 동교로46길 42)",
+            tags: [
+              "欧式复古餐具杯盘",
+              "Zakka杂货美学",
+              "高复购家居小件"
+            ],
+            brandIntro: "延南洞小巷内代表性的餐桌美学与复古杂货（Zakka）选品店。",
+            storeDetail: "半地下与一楼空间摆满复古法式牛奶玻璃杯、刺绣餐垫、黄油刀与香薰蜡烛，客单价集中在1.5万~3万韩元。",
+            diffHighlight: "展示了延南洞“咖啡馆+隔壁杂货店”的共生生态——客人刚在隔壁咖啡馆用过好看的复古盘子，出门就能在杂货店买走同款。",
+            num: 18
+          },
+          {
+            id: "fuji-film-party-hongdae",
+            nameCn: "Fakeme / 弘大人生四格拍贴旗舰街区 (포토이즘/인생네컷)",
+            nameKr: "인생네컷 홍대점",
+            nameEn: "Life4Cuts Flagship Street Hongdae",
+            lat: 37.55415,
+            lng: 126.92285,
+            labelDir: "bottom",
+            address: "首尔麻浦区谐和广场路 112 (서울 마포구 어울마당로 112)",
+            tags: [
+              "无人自助暴利业态",
+              "K-POP明星同框相纸",
+              "24小时跨界联名"
+            ],
+            brandIntro: "以“人生四格（Life4Cuts）”与“Photoism”为代表的韩国无人自助拍贴机品牌，通过与迪士尼、三丽鸥及各大K-POP经纪公司签下独家艺人同框相框版权，风靡全球。",
+            storeDetail: "在弘大步行街200米内密集开出十余家不同主题店：全店无收银员，配备自动换钞机、免费头箍道具墙、戴森卷发棒补妆台与6~10台主题摄影舱。",
+            diffHighlight: "弘大是全韩国自助拍贴机密度最高、联名相框首发最快的试验场，是研究“24小时无人值守+IP版权高毛利耗材”商业模型的必看现场。",
+            num: 19
+          },
+          {
+            id: "animate-hongdae",
+            nameCn: "Animate 弘大旗舰店 (韩国最大动漫文创店)",
+            nameKr: "애니메이트 홍대점",
+            nameEn: "Animate Hongdae Flagship",
+            lat: 37.55768,
+            lng: 126.92612,
+            labelDir: "top",
+            address: "首尔麻浦区杨花路 188 AK PLAZA 5楼 (서울 마포구 양화로 188 5F)",
+            tags: [
+              "日本动漫文创巨头",
+              "韩漫Webtoon周边专区",
+              "全预约制谷子发售"
+            ],
+            brandIntro: "日本最大动漫游戏衍生品零售商 Animate 在韩国设立的旗舰总店，同时深度整合了韩国本土条漫（Naver Webtoon / Kakao Page）官方周边。",
+            storeDetail: "占地近千平米，设有巨型漫画原版书墙、徽章盲抽墙、声优影音区以及与 Animate Cafe 联动的餐饮吧台。",
+            diffHighlight: "相比日本本土门店，弘大店开辟了大面积的“韩国耽美/奇幻条漫（K-Webtoon）立牌与原画集专区”，吸引了大量欧美与亚洲年轻女性专程扫货。",
+            num: 20
+          }
+        ]
+      },
+      {
+        id: "fashion",
+        name: "潮流服饰与街头旗舰",
+        shortName: "潮流/买手",
+        color: "#e11d48",
+        badgeBg: "bg-rose-100 text-rose-900 border-rose-300",
+        isSpecial: false,
+        description: "弘大是韩国街头潮牌（Streetwear）、滑板文化与现象级快时尚品牌的必争之地。",
+        stores: [
+          {
+            id: "thisisneverthat-hongdae",
+            nameCn: "thisisneverthat 弘大旗舰店",
+            nameKr: "디스이즈네버댓 홍대플래그십스토어",
+            nameEn: "thisisneverthat Hongdae Flagship",
+            lat: 37.55345,
+            lng: 126.92125,
+            labelDir: "left",
+            address: "首尔麻浦区残桥路 32 (서울 마포구 잔다리로 32)",
+            tags: [
+              "韩国版Supreme",
+              "New Balance长期联名伙伴",
+              "美式街头滑板基因"
+            ],
+            brandIntro: "2010年由三位好友创立的韩国殿堂级街头潮流品牌，被海外媒体誉为“韩国的Supreme”，与 New Balance、GORE-TEX、Converse 打造的联名鞋服屡屡售罄。",
+            storeDetail: "位于弘大西桥洞核心街区的极简工业风独栋空间，店内采用冷冽的水泥与不锈钢挂杆，陈列当季全线冲锋衣、复古卫衣与滑板配件。",
+            diffHighlight: "弘大店是品牌扎根街头亚文化的大本营总店，相比百货专柜，所有重磅限量联名抽签（Raffle）与街头文化派对均在此首发。",
+            num: 21
+          },
+          {
+            id: "musinsa-hongdae",
+            nameCn: "MUSINSA STORE 弘大 (线上百大潮牌线下集成店)",
+            nameKr: "무신사 스토어 홍대",
+            nameEn: "MUSINSA STORE Hongdae",
+            lat: 37.55515,
+            lng: 126.92255,
+            labelDir: "right",
+            address: "首尔麻浦区杨花路 164 B1~3楼 (서울 마포구 양화로 164)",
+            tags: [
+              "150+线上潮牌实体化",
+              "电子价签实时同步App折扣",
+              "巨型球鞋墙"
+            ],
+            brandIntro: "由从球鞋论坛起家的韩国百亿美金时尚独角兽 MUSINSA 打造的“线上平台线下实体化（O4O）”百货空间。",
+            storeDetail: "共4层（B1~3F），一次性集结了150多个原本只有线上网店的韩国本土设计师潮牌。全店所有吊牌均为电子二维码，用手机一扫即可享受与线上App完全一致的会员优惠券与实时库存调拨。",
+            diffHighlight: "不同于只卖自有基本款的“Musinsa Standard”，这家“MUSINSA STORE”是真正意义上的多品牌潮流百货，彻底解决了网生潮牌线下试穿难的痛点。",
+            num: 22
+          },
+          {
+            id: "lMC-hongdae",
+            nameCn: "LMC (Lost Management Cities) 弘大旗舰店",
+            nameKr: "엘엠씨 홍대플래그십스토어",
+            nameEn: "LMC Hongdae Flagship",
+            lat: 37.55285,
+            lng: 126.92155,
+            labelDir: "bottom",
+            address: "首尔麻浦区残桥路 27 B1 (서울 마포구 잔다리로 27)",
+            tags: [
+              "地球与小熊标志潮牌",
+              "Layer集团街头支线",
+              "亚文化地下空间"
+            ],
+            brandIntro: "与法式潮牌 Marithé 同属韩国 Layer 集团旗下的核心街头品牌，以城市失序感与标志性的地球/小熊图案深受东亚滑板与说唱青年喜爱。",
+            storeDetail: "位于弘大残桥路地下空间，装修融合了街头涂鸦、铁丝网与复古音响矩阵，售卖全系列街头宽松T恤、工装裤与冷帽。",
+            diffHighlight: "作为品牌唯一独立旗舰店，与隔壁的 thisisneverthat 共同构成了弘大最硬核的“西桥洞街头潮牌走廊”。",
+            num: 23
+          },
+          {
+            id: "brandy-melville-hongdae",
+            nameCn: "Brandy Melville / 弘大女装快时尚街铺集群 (M PlayGround)",
+            nameKr: "엠플레이그라운드 홍대2호점",
+            nameEn: "M PlayGround Hongdae",
+            lat: 37.55365,
+            lng: 126.92225,
+            labelDir: "right",
+            address: "首尔麻浦区 어울마당로 94 (서울 마포구 어울마당로 94)",
+            tags: [
+              "四层蓝色集装箱外观",
+              "9900韩元起极致供应链",
+              "男女同逛快反模式"
+            ],
+            brandIntro: "韩国本土超快反平价潮流服饰连锁 M PlayGround，依靠东大门与自有工厂极速供应链，把当季最火的流行版型做到1万~3万韩元极致低价。",
+            storeDetail: "在弘大步行街中心竖起一整栋四层高的克莱因蓝集装箱大楼，门口常年摆放9900韩元特价花车，内部按色系与风格密集陈列数千款单品。",
+            diffHighlight: "弘大2号店是其最具视觉统治力的四层独栋旗舰，展示了韩国平价实体服装店如何靠“地标级彩色外立面+门口特价引流池”维持超高进店率。",
+            num: 24
+          },
+          {
+            id: "nerdy-hongdae",
+            nameCn: "NERDY 弘大旗舰店",
+            nameKr: "널디 홍대플래그십스토어",
+            nameEn: "NERDY Hongdae Flagship",
+            lat: 37.55195,
+            lng: 126.92215,
+            labelDir: "left",
+            address: "首尔麻浦区 어울마당路 94-12 1~3楼 (서울 마포구 어울마당로 94-12)",
+            tags: [
+              "美式复古青年卧室造景",
+              "紫色运动套装鼻祖",
+              "APR美妆集团旗下"
+            ],
+            brandIntro: "韩国美容仪与潮流巨头 APR 集团旗下的街头运动品牌，曾凭一套高饱和度紫色双杠运动服席卷全韩综艺与偶像机场街拍。",
+            storeDetail: "三层美式复古青年公寓主题独栋：把收银台做成复古保龄球馆与洗衣房，2楼还原了美式大学生的街头卧室与游戏机房。",
+            diffHighlight: "弘大旗舰店是 NERDY 创立初期做火“场景化网红店打卡”的成名作，展示了服装店如何把试衣区域做成摄影棚。",
+            num: 25
+          }
+        ]
+      },
+      {
+        id: "special",
+        name: "商圈独有特色：Z世代未来主义空间与数字旗舰",
+        shortName: "特色：先锋体验店",
+        color: "#d97706",
+        badgeBg: "bg-amber-100 text-amber-900 border-amber-300",
+        isSpecial: true,
+        description: "弘大独有的特色在于“无论是顶级国潮还是通信巨头，在这里开店都必须把整栋楼变成科幻艺术馆或青年游乐场”。",
+        stores: [
+          {
+            id: "ader-error-hongdae",
+            nameCn: "ADER ERROR 弘大 Space 1.0 旗舰店",
+            nameKr: "아더에러 홍대스페이스",
+            nameEn: "ADER ERROR Hongdae Space",
+            lat: 37.55248,
+            lng: 126.92195,
+            labelDir: "left",
+            address: "首尔麻浦区卧牛山路21街 19-18 (서울 마포구 와우산로21길 19-18)",
+            tags: [
+              "怪诞未来主义展陈",
+              "试衣间体验创新",
+              "韩国国潮天花板"
+            ],
+            brandIntro: "2014年由跨领域匿名创意团队创立的无性别设计师潮牌，以“But near missed things”为哲学，将空间装置艺术推向极致。",
+            storeDetail: "位于弘大核心巷弄的独栋美术馆级零售空间。一进门并非衣架，而是怪诞的太空舱雕塑、多声道声学艺术装置与超现实主义洗手间；服装如同展品般稀疏悬挂，连试衣间都设计成不同主题的拍照包厢。",
+            diffHighlight: "虽然品牌在圣水洞、新沙洞陆续开出了 Space 2.0/3.0，但弘大店是品牌在大学街区立足的初代旗舰实验场，对年轻街头客群的动线引导极具借鉴意义。",
+            num: 26
+          },
+          {
+            id: "t-factory-hongdae",
+            nameCn: "T Factory 弘大 (SK电讯青年数字体验馆)",
+            nameKr: "T팩토리 홍대",
+            nameEn: "T Factory SK Telecom Hongdae",
+            lat: 37.55685,
+            lng: 126.92425,
+            labelDir: "right",
+            address: "首尔麻浦区杨花路 144 (서울 마포구 양화로 144)",
+            tags: [
+              "运营商营业厅彻底潮牌化",
+              "零推销沉浸式策展",
+              "24小时无人购机舱"
+            ],
+            brandIntro: "韩国第一大移动通信运营商 SK Telecom 为彻底改变年轻人对“传统手机营业厅”刻板印象而打造的旗舰概念空间。",
+            storeDetail: "店内看不到任何办电话卡的柜台，而是每隔几个月更换一次大型沉浸式青年文化互动展（如复古MP3音乐展、AI胶片相馆、多巴胺色彩迷宫），入口处设有24小时无人自助手机购买与回收终端。",
+            diffHighlight: "全韩唯一一家“完全不卖套餐、纯靠策展内容与Z世代建立情感连接”的电信旗舰店，是传统重资产行业做品牌年轻化的神级案例。",
+            num: 27
+          }
+        ]
+      }
+    ]
+  },
+  "hannam": {
+    id: "hannam",
+    name: "汉南洞",
+    enName: "HANNAM-DONG",
+    status: "26家核心旺店",
+    center: [
+      37.5368,
+      127.0015
+    ],
+    zoom: 15,
+    kakaoLevel: 4,
+    headline: "汉南洞：背靠财阀富人区的陡坡设计师街区与高客单买手聚落",
+    retailOverview: "汉南洞北靠南山与UN Village（三星李家及众多顶流明星居住地），南望汉江。不同于弘大的学生气与圣水洞的工业粗粝感，汉南洞是首尔“老钱审美与先锋新贵”交汇的高地。这里的陡坡小巷里聚集了全韩坪效最高的K-Fashion女装独栋旗舰（Mardi Mercredi、emis、Marithé）、高冷沙龙香氛（Nonfiction）以及现代集团与三星集团打造的顶级文化复合空间。",
+    timeline: [
+      {
+        period: "1970s–2000s · 外交使馆与顶豪住宅区",
+        desc: "紧邻梨泰院与原驻韩美军龙山基地，数十国大使馆与韩国财阀家族私宅落户于此，奠定了国际化、高隐私度与高消费力的社区基因。"
+      },
+      {
+        period: "2004–2016 · 三星Leeum美术馆与现代卡文化注入",
+        desc: "三星基金会斥资打造 Leeum 美术馆，现代信用卡（Hyundai Card）接连在此落地黑胶音乐图书馆与演艺空间，吸引大批设计师、建筑师工作室入驻。"
+      },
+      {
+        period: "2018至今 · K-Fashion 独立品牌第一街",
+        desc: "沿着梨泰院路北侧斜坡街区（人称 Comme des Garçons 街及支巷），本土设计师服饰与沙龙香氛密集包下整栋小楼，成为全亚洲时尚买手与高净值游客的必逛圣地。"
+      }
+    ],
+    categories: [
+      {
+        id: "coffee",
+        name: "咖啡与烘焙旺店",
+        shortName: "咖啡/烘焙",
+        color: "#059669",
+        badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+        isSpecial: false,
+        description: "汉南洞的咖啡馆兼顾“硬核精品烘焙豆”、“高冷工业极简风”与“高颜值社区街角松弛感”，是时尚买手巡店途中的能量补给站。",
+        stores: [
+          {
+            id: "anthracite-hannam",
+            nameCn: "Anthracite Coffee 汉南店",
+            nameKr: "앤트러사이트 한남점",
+            nameEn: "Anthracite Coffee Roasters Hannam",
+            lat: 37.53595,
+            lng: 127.00025,
+            labelDir: "left",
+            address: "首尔龙山区梨泰院路 240 (서울 용산구 이태원로 240)",
+            tags: [
+              "韩国第一代精品烘焙",
+              "文学命名拼配豆",
+              "三层主街通透楼"
+            ],
+            brandIntro: "韩国精品咖啡浪潮的奠基者之一（店名意为“无烟煤”），以深邃的工业哲思和用文学家命名的咖啡豆（如“夏目漱石”、“空气与梦”）享誉亚洲咖啡圈。",
+            storeDetail: "位于汉南洞梨泰院路主干道核心位置的三层独栋建筑。1楼将粗犷的水泥台面与茂密的室内景观绿植结合，陈列全系列包装精美的咖啡豆与挂耳包。",
+            diffHighlight: "合井店偏重阴翳幽暗的工厂废墟感，西桥洞店是静音日式枯山水洋房，而汉南店则是全品牌最明亮摩登、零售咖啡豆伴手礼转化率最高的门店。",
+            num: 1
+          },
+          {
+            id: "milestone-coffee-hannam",
+            nameCn: "Milestone Coffee 汉南店",
+            nameKr: "마일스톤 커피 한남점",
+            nameEn: "Milestone Coffee Hannam",
+            lat: 37.53785,
+            lng: 127.00195,
+            labelDir: "right",
+            address: "首尔龙山区汉南大路27街 36-55 1楼 (서울 용산구 한남대로27길 36-55)",
+            tags: [
+              "维也纳奶盖咖啡标杆",
+              "白色街角社区感",
+              "高复购手工提拉米苏"
+            ],
+            brandIntro: "自2014年起创立于新沙洞林荫道的经典精品咖啡馆，凭借一杯绵密顺滑的维也纳咖啡（Einspanner）与软糯提拉米苏长红十年。",
+            storeDetail: "坐落于汉南洞主巷交叉口的一楼白色拐角铺位，木质长椅直接延伸至半户外街边，是韩国潮人穿搭街拍出镜率最高的咖啡馆门头之一。",
+            diffHighlight: "相比新沙总店和圣水店，汉南店正好处于设计师品牌街区的十字枢纽点，其半开放式街角外摆将“客人喝咖啡本身”变成了最好的活体招牌。",
+            num: 2
+          },
+          {
+            id: "mtln-hannam",
+            nameCn: "MTLN (More Than Less) 汉南极简买手咖啡",
+            nameKr: "모어댄레스 한남",
+            nameEn: "MTL Hannam (More Than Less)",
+            lat: 37.53675,
+            lng: 126.99985,
+            labelDir: "left",
+            address: "首尔龙山区梨泰院路49街 24 (서울 용산구 이태원로49길 24)",
+            tags: [
+              "柏林Bonanza咖啡豆韩国首引",
+              "极简金属几何吧台",
+              "咖啡+环保单品买手"
+            ],
+            brandIntro: "将德国柏林殿堂级浅烘精品咖啡 Bonanza Coffee 正式引入韩国的潮流文化企划空间。",
+            storeDetail: "推门即是极具现代主义张力的弧形不锈钢吧台，前半区提供顶级浅烘手冲与意式咖啡，后半区陈列独立黑胶、环保包袋与设计杂志。",
+            diffHighlight: "相比圣水洞分店，汉南店是 MTL 的起家总店，奠定了首尔“精品咖啡 + 先锋生活方式选品”一店两用的空间模板。",
+            num: 3
+          },
+          {
+            id: "old-ferry-donut-hannam",
+            nameCn: "Old Ferry Donut 汉南旗舰店",
+            nameKr: "올드페리도넛 한남점",
+            nameEn: "Old Ferry Donut Hannam",
+            lat: 37.53825,
+            lng: 127.00145,
+            labelDir: "top",
+            address: "首尔龙山区汉南大路27街 66 (서울 용산구 한남대로27길 66)",
+            tags: [
+              "韩国第一代爆浆甜甜圈鼻祖",
+              "花生酱/开心果巨型甜甜圈",
+              "橙色美式复古视觉"
+            ],
+            brandIntro: "2016年创立于汉南洞的高端美式手作甜甜圈品牌（早于Knotted），是韩国“高热量爆浆夹心甜甜圈”风潮的真正开创者。",
+            storeDetail: "位于汉南洞斜坡高处的亮橙色美式复古空间，主打个头极大、内馅饱满的开心果奶油甜甜圈、花生酱甜甜圈与漂浮着迷你甜甜圈的冰拿铁。",
+            diffHighlight: "虽然品牌如今已进驻各大百货与新沙洞 Nice Weather，但汉南洞是其创世发源地，出品现炸温度与堂食氛围最佳。",
+            num: 4
+          },
+          {
+            id: "maxim-plant-hannam",
+            nameCn: "Maxim Plant (韩国速溶咖啡巨头五层烘焙殿堂)",
+            nameKr: "맥심플랜트",
+            nameEn: "Maxim Plant Hannam",
+            lat: 37.53615,
+            lng: 127.00165,
+            labelDir: "right",
+            address: "首尔龙山区梨泰院路 250 (서울 용산구 이태원로 250)",
+            tags: [
+              "速溶咖啡巨头形象逆袭",
+              "地下巨型金色烘焙机",
+              "五层森林系第三空间"
+            ],
+            brandIntro: "韩国国民速溶咖啡霸主“东西食品（Dongsuh，黄色条装Maxim速溶咖啡母公司）”为打破“老派速溶”印象、向精品咖啡致敬而重金打造的超级旗舰店。",
+            storeDetail: "从B3到地上3层共6层（约2000㎡）：地下设有高达两层楼的工业级Probat生豆储存罐与烘焙流水线，3楼“The Reserve”提供根据顾客今日心情测试推荐的24种单一产地手冲及感官盲测体验。",
+            diffHighlight: "全韩唯一一家 Maxim Plant！它是传统快消食品巨头通过一座“不计坪效的博物馆级精品咖啡大楼”重塑年轻一代品牌认知的教科书案例。",
+            num: 5
+          },
+          {
+            id: "rose-bakery-hannam",
+            nameCn: "Rose Bakery 汉南 (Comme des Garçons 二楼有机咖啡)",
+            nameKr: "로즈베이커리 한남",
+            nameEn: "Rose Bakery CDG Hannam",
+            lat: 37.53662,
+            lng: 127.00215,
+            labelDir: "right",
+            address: "首尔龙山区梨泰院路 261 (서울 용산구 이태원로 261)",
+            tags: [
+              "川久保玲亲自钦点餐饮",
+              "英法混血有机胡萝卜蛋糕",
+              "纯白买手空间内嵌"
+            ],
+            brandIntro: "由川久保玲丈夫 Adrian Joffe 的妹妹 Rose 创立于巴黎玛黑区的有机烘焙轻食馆，全球仅在伦敦、东京、首尔等地的 Dover Street Market 或 CDG 旗舰店内共生开设。",
+            storeDetail: "位于汉南洞川久保玲（CDG）六层旗舰店内部，全白空间搭配极简金属餐桌，招牌有机胡萝卜蛋糕（Carrot Cake）与蔬菜咸派二十年如一日稳定出品。",
+            diffHighlight: "全韩唯一分店，展示了顶奢先锋时装屋如何将“健康有机轻食烘焙”无缝嵌入零售动线。",
+            num: 6
+          },
+          {
+            id: "conhas-hannam",
+            nameCn: "CONHAS 汉南独栋泳池庭院咖啡",
+            nameKr: "콘하스 한남점",
+            nameEn: "CONHAS Coffee Hannam",
+            lat: 37.53525,
+            lng: 126.99895,
+            labelDir: "bottom",
+            address: "首尔龙山区梨泰院路55街 48 (서울 용산구 이태원로55길 48)",
+            tags: [
+              "豪宅私邸改造",
+              "户外浅水池造景",
+              "早午餐与手冲"
+            ],
+            brandIntro: "以改造大型独立私宅著称的都市度假风烘焙咖啡品牌。",
+            storeDetail: "将汉南洞使馆区旁的一栋双层白砖独栋豪宅完整保留，前院修筑了标志性的户外浅水景观池与松树露台，室内每个房间保留了壁炉与书房格局。",
+            diffHighlight: "相比延禧洞首店，汉南店紧邻三星Leeum美术馆，完美承接了看完艺术展后的高净值下午茶客群。",
+            num: 7
+          }
+        ]
+      },
+      {
+        id: "supermarket",
+        name: "商超与高端美食生活馆",
+        shortName: "商超/集合店",
+        color: "#2563eb",
+        badgeBg: "bg-blue-100 text-blue-900 border-blue-300",
+        isSpecial: false,
+        description: "服务于汉南洞财阀家族与驻韩外籍外交官的商超，代表着韩国精品生鲜、全球有机制品与进口食杂的最高水准。",
+        stores: [
+          {
+            id: "gourmet-494-hannam",
+            nameCn: "Gourmet 494 汉南顶豪精品食品商超",
+            nameKr: "고메이494 한남",
+            nameEn: "Gourmet 494 Hannam",
+            lat: 37.53425,
+            lng: 127.00855,
+            labelDir: "right",
+            address: "首尔龙山区汉南大路 91 Nine One Hannam B1~B2 (서울 용산구 한남대로 91)",
+            tags: [
+              "韩国第一顶豪底商",
+              "米其林餐饮+精品超市",
+              "Grocerant餐饮零售化"
+            ],
+            brandIntro: "韩华集团旗下顶级奢华百货 Galleria 打造的殿堂级精品美食商超品牌（“Grocerant = Grocery 超市 + Restaurant 餐厅”概念的韩国开创者）。",
+            storeDetail: "位于全韩最贵顶豪公寓 Nine One Hannam 的地下商业层。汇集了全球顶级有机生鲜、鱼子酱、精品红酒窖、Blue Bottle 蓝瓶咖啡汉南店以及十余家米其林级餐饮档口。",
+            diffHighlight: "相比狎鸥亭 Galleria 百货总店B1的紧凑格局，汉南店是品牌首次脱离百货大楼、在顶级富人区独立运营的“社区型奢华生活中心”。",
+            num: 8
+          },
+          {
+            id: "high-street-market-italiano",
+            nameCn: "High Street Market 汉南欧美进口熟食超市",
+            nameKr: "하이스트리트마켓",
+            nameEn: "High Street Market Hannam",
+            lat: 37.53485,
+            lng: 127.00725,
+            labelDir: "left",
+            address: "首尔龙山区汉南大路 60 (서울 용산구 한남대로 60)",
+            tags: [
+              "整墙欧洲火腿与奶酪库",
+              "现做帕尼尼三明治",
+              "外交官采购定点"
+            ],
+            brandIntro: "专注欧洲原产地直采冷切肉（Charcuterie）、手工芝士、松露酱与葡萄酒的精品垂直超市。",
+            storeDetail: "前店为开放式意式熟食三明治吧台与红酒杯卖区，后店为步入式恒温奶酪熟成室与欧美有机调味品货架。",
+            diffHighlight: "单店运营，展示了如何围绕“红酒配芝士火腿”这一细分中产生活方式切口，做出高复购的社区精品小超。",
+            num: 9
+          },
+          {
+            id: "oround-hannam",
+            nameCn: "Olive Young 汉南高端社区概念店",
+            nameKr: "올리브영 한남점",
+            nameEn: "Olive Young Hannam",
+            lat: 37.53635,
+            lng: 127.00115,
+            labelDir: "bottom",
+            address: "首尔龙山区梨泰院路 246 (서울 용산구 이태원로 246)",
+            tags: [
+              "高客单功效护肤强化",
+              "小众沙龙洗护高占比",
+              "外籍居民友善导视"
+            ],
+            brandIntro: "Olive Young 在汉南洞梨泰院路主街设立的标杆门店，紧邻现代卡黑胶馆。",
+            storeDetail: "针对汉南洞高消费力年轻女性与外籍住客，大幅压缩了低单价基础促销堆头，将核心陈列面留给高单价抗衰精华、贵妇护发精油与口服美容胶原蛋白。",
+            diffHighlight: "对比明洞店（游客整盒买面膜）与汉南店（高净值人群买抗衰与贵价洗护），能清晰看到同一连锁商超的精细化千店千面选品策略。",
+            num: 10
+          }
+        ]
+      },
+      {
+        id: "cultural",
+        name: "品牌文创与沙龙香氛设计",
+        shortName: "品牌文创",
+        color: "#9333ea",
+        badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
+        isSpecial: false,
+        description: "汉南洞是韩国小众沙龙香氛（K-Perfume）与独立书籍/黑胶文创的大本营，强调私密感、试香仪式感与极简包装。",
+        stores: [
+          {
+            id: "nonfiction-hannam",
+            nameCn: "Nonfiction 汉南旗舰店",
+            nameKr: "논픽션 한남",
+            nameEn: "Nonfiction Hannam Flagship",
+            lat: 37.53695,
+            lng: 127.00315,
+            labelDir: "right",
+            address: "首尔龙山区梨泰院路 242 2楼 (서울 용산구 이태원로 242)",
+            tags: [
+              "极简沙龙香氛代表",
+              "温润原木画廊",
+              "洗手台沉浸试香"
+            ],
+            brandIntro: "2019年由创意总监车海英创立的生活方式香氛品牌。主打克制、纯净的文学叙事（如 Santal Cream、Gentle Night），迅速攻占日本与欧美买手店。",
+            storeDetail: "位于梨泰院路主街二楼，室内如同阳光洒满的私人书房与欧洲古董家具展厅，中央设有大型大理石温水洗手池供顾客通过洗手露完整体验留香。",
+            diffHighlight: "汉南洞是 Nonfiction 的品牌发源地，相比三清洞店（韩屋风），汉南店完美诠释了品牌标志性的“暖调极简（Warm Minimalism）”住宅沙龙感。",
+            num: 11
+          },
+          {
+            id: "cosmic-mansion",
+            nameCn: "Cosmic Mansion 汉南香氛文创店",
+            nameKr: "코스믹맨션 한남",
+            nameEn: "Cosmic Mansion Hannam",
+            lat: 37.53755,
+            lng: 126.99945,
+            labelDir: "left",
+            address: "首尔龙山区梨泰院路54街 31 (서울 용산구 이태원로54길 31)",
+            tags: [
+              "高性价比大理石香砖",
+              "黑白极简视觉",
+              "高转化伴手礼"
+            ],
+            brandIntro: "诞生于汉南洞的独立设计师香氛与家居文创品牌，以天然大豆蜡烛、大理石纹扩香石包袋挂件及亚麻喷雾闻名。",
+            storeDetail: "隐藏在汉南洞静谧支巷里的黑白极简风小独栋，门前设有标志性的白色庭院台阶，室内按编号清晰陈列十余种中性木质与无花果调香氛。",
+            diffHighlight: "作为品牌扎根汉南洞十年的唯一旗舰大本营，展示了中小文创香氛品牌如何靠“统一黑白字体包装 + 轻便香囊单品”跑通长期盈利模型。",
+            num: 12
+          },
+          {
+            id: "pesade-hannam",
+            nameCn: "pesade 汉南艺术香氛专门店",
+            nameKr: "페사드 한남",
+            nameEn: "pesade Hannam Flagship",
+            lat: 37.53805,
+            lng: 127.00055,
+            labelDir: "top",
+            address: "首尔龙山区梨泰院路49街 16 (서울 용산구 이태원로49길 16)",
+            tags: [
+              "马术盛装舞步灵感",
+              "Blackpink Rosé同款",
+              "复古药剂师木柜"
+            ],
+            brandIntro: "由平面与视觉艺术团队创立的新锐高端沙龙香氛品牌（店名取自马术中的直立致敬动作），因 Blackpink 成员私用推荐而火遍亚洲。",
+            storeDetail: "将汉南洞小巷内一栋带小花园的红砖住宅改造成欧式古典书房，全店采用深色樱桃木展柜、银质托盘与书法手写体标签。",
+            diffHighlight: "相比圣水店，汉南店是品牌首家旗舰店，其“古典骑士/图书室”主题软装与周边一片冷淡水泥风店铺形成强烈视觉反差。",
+            num: 13
+          },
+          {
+            id: "born-to-stand-out",
+            nameCn: "BORNTOSTANDOUT 汉南叛逆香氛美术馆",
+            nameKr: "본투스탠드아웃 한남",
+            nameEn: "BORNTOSTANDOUT Flagship Hannam",
+            lat: 37.53715,
+            lng: 126.99885,
+            labelDir: "left",
+            address: "首尔龙山区梨泰院路55街 43-1 (서울 용산구 이태원로55길 43-1)",
+            tags: [
+              "朝鲜白瓷瓶身+鲜红字体",
+              "叛逆猎奇命名(Dirty Rice)",
+              "进军欧美丝芙兰黑马"
+            ],
+            brandIntro: "近年来韩国出海欧美最成功的先锋沙龙香水品牌，将传统的“朝鲜白瓷玉壶春瓶造型”与极具挑衅性的猩红色英文标签、大胆猎奇的调香（如 Dirty Rice 脏米饭、Drunk Lovers）结合。",
+            storeDetail: "独栋前卫艺术空间：全店以刺眼的纯白与猩红撞色为主视觉，同时定期在二楼举办大胆的当代前卫艺术展。",
+            diffHighlight: "全球唯一旗舰总店！它向文创与美妆同行展示了：如何把最传统的“东方白瓷非遗符号”通过极致的现代朋克视觉反转，卖进巴黎与纽约顶级买手店。",
+            num: 14
+          },
+          {
+            id: "post-poetics",
+            nameCn: "Post Poetics 汉南海外艺术画册与文创书店",
+            nameKr: "포스트포에틱스",
+            nameEn: "Post Poetics Art Bookshop",
+            lat: 37.53625,
+            lng: 126.99995,
+            labelDir: "bottom",
+            address: "首尔龙山区梨泰院路 240 3楼 (서울 용산구 이태원로 240 3F)",
+            tags: [
+              "首尔设计师灵感库",
+              "海外独立出版物直采",
+              "自制帆布袋周边"
+            ],
+            brandIntro: "首尔视觉设计师与艺术总监公认的殿堂级独立艺术书店兼文化企划机构。",
+            storeDetail: "隐匿于梨泰院路建筑三楼，满屋平铺陈列来自欧美日的平面设计、摄影、建筑原版画册及独立杂志（Zine），同时售卖极简排版的自有文创托特包与海报。",
+            diffHighlight: "无分店，是汉南洞创意人社群的精神据点，展示了独立书店如何靠“B端设计公司图书采购顾问 + C端文创衍生品”活成行业常青树。",
+            num: 15
+          },
+          {
+            id: "tamburins-hannam",
+            nameCn: "Tamburins 汉南独栋旗舰店",
+            nameKr: "탬버린즈 한남 플래그십스토어",
+            nameEn: "Tamburins Hannam Flagship",
+            lat: 37.53605,
+            lng: 127.00135,
+            labelDir: "right",
+            address: "首尔龙山区梨泰院路 238 (서울 용산구 이태원로 238)",
+            tags: [
+              "梨泰院路主街地标",
+              "巨型雕塑橱窗",
+              "全系列高定香水"
+            ],
+            brandIntro: "IICOMBINED 集团旗下现象级艺术香氛品牌。",
+            storeDetail: "位于汉南洞梨泰院路正中央的三层纯白与暖橘色调独栋建筑，紧邻 Anthracite 与现代卡黑胶馆，1~2楼设有大型仿真艺术雕塑与环形试香台。",
+            diffHighlight: "相比圣水店（地下废墟骨架风）与新沙店（早期白色极简风），汉南店建筑立面更具雕塑感，且处于汉南洞主干道正中心，承接了全街区最大的自然人流。",
+            num: 16
+          }
+        ]
+      },
+      {
+        id: "fashion",
+        name: "潮流服饰与设计师独栋矩阵",
+        shortName: "潮流/买手",
+        color: "#e11d48",
+        badgeBg: "bg-rose-100 text-rose-900 border-rose-300",
+        isSpecial: false,
+        description: "汉南洞是名副其实的“K-Fashion 独栋第一街”，同一个品牌甚至会在一条巷子里连开女装、配饰、童装3~4家独立门店。",
+        stores: [
+          {
+            id: "mardi-mercredi-hannam",
+            nameCn: "Mardi Mercredi 汉南旗舰集群",
+            nameKr: "마르디 메크르디 한남 플래그십스토어",
+            nameEn: "Mardi Mercredi Hannam Flagship",
+            lat: 37.53725,
+            lng: 127.00015,
+            labelDir: "left",
+            address: "首尔龙山区梨泰院路54街 58 (서울 용산구 이태원로54길 58)",
+            tags: [
+              "小雏菊爆款制造机",
+              "一街连开4栋专门店",
+              "极简买手陈列"
+            ],
+            brandIntro: "由朴和睦与李秀贤夫妇创立的法式慵懒风设计师品牌，凭借“小雏菊（Flower Mardi）”与腊肠狗印花卫衣在三年内年营收突破百亿韩元。",
+            storeDetail: "在汉南洞斜坡小巷里采取了罕见的“街区包场策略”——几百米内分别开设1号女装店、2号鞋履配饰店、童装店与高尔夫运动店。",
+            diffHighlight: "相比商场专柜，汉南洞是品牌的绝对主场与发源街区，多栋独立主题小楼构成的“品牌迷你街区”让顾客逛完女装自然流入隔壁配饰店。",
+            num: 17
+          },
+          {
+            id: "emis-hannam",
+            nameCn: "emis 汉南1号街区旗舰店",
+            nameKr: "이미스 한남플래그십스토어",
+            nameEn: "emis Hannam Flagship",
+            lat: 37.53765,
+            lng: 127.00085,
+            labelDir: "right",
+            address: "首尔龙山区大使馆路5街 27 (서울 용산구 대사관로5길 27)",
+            tags: [
+              "排队限流进店",
+              "棒球帽与腋下包现象级单品",
+              "独栋前院打卡点"
+            ],
+            brandIntro: "凭借高频配饰单品（弯檐棒球帽、复古波点帆布包、发箍）火遍全亚洲的韩国设计师配饰品牌。",
+            storeDetail: "带小庭院的白色独栋小屋，院内布置当季主题装置（如复古红色跑车或电话亭），周末常年需要取号排队限流进店挑选帽子。",
+            diffHighlight: "汉南店是 emis 建立线下排队神话的起点，验证了“小面积高颜值独栋+门前排队效应=最强小红书/IG种草机”的传播定律。",
+            num: 18
+          },
+          {
+            id: "marithe-hannam",
+            nameCn: "Marithé François Girbaud 汉南旗舰总店",
+            nameKr: "마리떼 프랑소와 저버 한남플래그십스토어",
+            nameEn: "Marithe Francois Girbaud Hannam",
+            lat: 37.53685,
+            lng: 127.00055,
+            labelDir: "bottom",
+            address: "首尔龙山区梨泰院路55街 52 (서울 용산구 이태원로55길 52)",
+            tags: [
+              "法式老牌翻红大本营",
+              "复古木质巴黎街铺感",
+              "丹宁与针织全系"
+            ],
+            brandIntro: "韩国时尚集团 Layer 成功重塑的法国1972年经典品牌。",
+            storeDetail: "位于汉南洞斜坡核心位，采用温润的法式木质橱窗与暖黄灯光，完整陈列男女装、经典Logo贝雷帽、帆布包及童装支线。",
+            diffHighlight: "汉南店是品牌在韩国开出的第一家独立街边旗舰店，正是这家店的爆火奠定了其随后进军明洞、圣水与东京的底气。",
+            num: 19
+          },
+          {
+            id: "rockfish-hannam",
+            nameCn: "Rockfish Weatherwear 汉南旗舰店",
+            nameKr: "락피쉬웨더웨어 한남플래그십스토어",
+            nameEn: "Rockfish Weatherwear Hannam",
+            lat: 37.53795,
+            lng: 127.00115,
+            labelDir: "top",
+            address: "首尔龙山区梨泰院路54街 58-26 (서울 용산구 이태원로54길 58-26)",
+            tags: [
+              "芭蕾风玛丽珍鞋爆款",
+              "英伦雨靴品牌韩国重塑",
+              "精细试鞋动线"
+            ],
+            brandIntro: "原本是英国康沃尔郡的传统功能性雨靴品牌，被韩国运营团队收购重塑后，精准切中“Balletcore（芭蕾少女风）”趋势，靠丝绸绑带玛丽珍鞋、厚底雪地靴与切尔西雨靴逆袭成顶流女鞋品牌。",
+            storeDetail: "双层英伦复古乡村风小楼，1楼主打当季最火的芭蕾玛丽珍鞋与雨靴，2楼为英伦格纹围巾、手套与针织配饰，鞋盒包装本身就像精美伴手礼盒。",
+            diffHighlight: "相比圣水店，汉南店坐落于女装买手街中心，与隔壁 Mardi Mercredi 客群100%重合，连带购买率极高。",
+            num: 20
+          },
+          {
+            id: "depound-hannam",
+            nameCn: "depound 汉南四层生活方式旗舰店 (Be My Guest)",
+            nameKr: "드파운드 한남 쇼룸",
+            nameEn: "depound Hannam Flagship",
+            lat: 37.53845,
+            lng: 126.99975,
+            labelDir: "left",
+            address: "首尔龙山区大使馆路5街 16 (서울 용산구 대사관로5길 16)",
+            tags: [
+              "帆布包起家的慢生活美学",
+              "四层公寓式陈列",
+              "自有咖啡吧台"
+            ],
+            brandIntro: "以“把感性注入日常（Sensibility in Daily Life）”为理念的韩国极简设计师品牌，最早靠高质感亚麻帆布包与挂历走红，后扩展至全品类女装与家居。",
+            storeDetail: "整栋四层建筑按“邀请朋友来家里做客（Be My Guest）”叙事设计：1楼为礼品杂货与咖啡吧，2楼为经典包袋，3~4楼为女装与设计师客厅场景。",
+            diffHighlight: "品牌唯一四层全品类旗舰总店，展示了“文创帆布包品牌如何一步步向上生长为高客单成衣与家居全案品牌”。",
+            num: 21
+          },
+          {
+            id: "grove-hannam",
+            nameCn: "GROVE 汉南独栋花园旗舰店",
+            nameKr: "그로브 한남스토어",
+            nameEn: "GROVE Hannam Flagship",
+            lat: 37.53745,
+            lng: 127.00225,
+            labelDir: "right",
+            address: "首尔龙山区汉南大路27街 66 2楼 (서울 용산구 한남대로27길 66)",
+            tags: [
+              "1960年代美式常春藤学院风",
+              "高客单针织与毛衣",
+              "洋房庭院"
+            ],
+            brandIntro: "深受韩国女团与造型师喜爱的1960年代复古休闲女装品牌，主打学院风POLO领针织衫、百褶裙与复古棒球帽。",
+            storeDetail: "改造自带草坪庭院的复古私宅，室内采用美式胡桃木衣柜与复古地毯陈列，购物体验如同在富裕人家的步入式衣帽间选衣。",
+            diffHighlight: "汉南店是 GROVE 的旗舰主场，单次进店客单价常年稳居汉南洞女装街区前列。",
+            num: 22
+          },
+          {
+            id: "cdg-hannam",
+            nameCn: "Comme des Garçons 汉南六层全球旗舰店",
+            nameKr: "꼼데가르송 한남점",
+            nameEn: "Comme des Garcons Seoul Hannam",
+            lat: 37.53668,
+            lng: 127.00228,
+            labelDir: "bottom",
+            address: "首尔龙山区梨泰院路 261 (서울 용산구 이태원로 261)",
+            tags: [
+              "汉南洞商业街开山鼻祖(2010)",
+              "川久保玲亲自设计隧道动线",
+              "六层迷宫式艺术馆"
+            ],
+            brandIntro: "日本殿堂级时装大师川久保玲创立的先锋时装帝国（韩国由三星物产时装部门代理运营）。",
+            storeDetail: "高达6层的纯白雕塑感大楼，不设常规扶梯，而是用一条贯通上下的白色弧形斜坡隧道串联各层展厅，囊括 CDG 全支线与 Dover Street Market 级选品。",
+            diffHighlight: "这栋楼于2010年开业，是整个汉南洞从老住宅区蜕变为“设计师街区”的0号定海神针（当地人至今仍把梨泰院路这一段直接称为“CDG街”）。",
+            num: 23
+          }
+        ]
+      },
+      {
+        id: "special",
+        name: "商圈独有特色：财阀文化艺术基建（街区灵魂锚点）",
+        shortName: "特色：财阀艺术基建",
+        color: "#d97706",
+        badgeBg: "bg-amber-100 text-amber-900 border-amber-300",
+        isSpecial: true,
+        description: "汉南洞最令全球商业地产人赞叹的底层逻辑，是“三星集团与现代集团先用不计回报的顶级美术馆、黑胶馆和建筑图书馆把高审美人群吸过来，从而自然催生了周边上百家高溢价独立店铺”。",
+        stores: [
+          {
+            id: "vinyl-and-plastic",
+            nameCn: "Hyundai Card Vinyl & Plastic 黑胶音乐体验馆",
+            nameKr: "현대카드 바이닐앤플라스틱",
+            nameEn: "Hyundai Card Vinyl & Plastic",
+            lat: 37.53642,
+            lng: 127.00085,
+            labelDir: "top",
+            address: "首尔龙山区梨泰院路 248 (서울 용산구 이태원로 248)",
+            tags: [
+              "金融品牌跨界空间天花板",
+              "上万张黑胶免费试听",
+              "二楼景观咖啡"
+            ],
+            brandIntro: "由现代汽车集团旗下的现代信用卡（Hyundai Card）打造的品牌文化体验空间，将原本冰冷的金融信用卡业务转化为音乐与设计地标。",
+            storeDetail: "双层通透玻璃建筑：1楼陈列超过1万张黑胶唱片（Vinyl）与卡带，设置一整排复古黑胶唱机供所有人免费戴耳机试听；2楼为视野极佳的 Vinyl Coffee 吧台。",
+            diffHighlight: "全韩唯一一家由金融机构直接运营的大型黑胶零售体验馆，不追求卖唱片本身的微薄利润，而是通过极致审美空间完成高净值年轻客群的信用卡获客。",
+            num: 24
+          },
+          {
+            id: "hyundai-card-music-library",
+            nameCn: "Hyundai Card Music Library & Understage",
+            nameKr: "현대카드 뮤직라이브러리",
+            nameEn: "Hyundai Card Music Library",
+            lat: 37.53652,
+            lng: 127.00105,
+            labelDir: "right",
+            address: "首尔龙山区梨泰院路 246 (서울 용산구 이태원로 246)",
+            tags: [
+              "悬挑钢结构建筑地标",
+              "全球罕见限量黑胶馆藏",
+              "地下Live演出剧场"
+            ],
+            brandIntro: "现代信用卡“文化图书馆矩阵”中最著名的一座，就在 Vinyl & Plastic 隔壁，一楼镂空作为城市公共观景廊道。",
+            storeDetail: "馆内收藏了自1950年代以来超过1万张全球稀缺黑胶原盘及全套《滚石》创刊号杂志，地下（Understage）则是孵化独立音乐人的专业演出剧场。",
+            diffHighlight: "与隔壁面向大众敞开售卖的 Vinyl & Plastic 形成“一买一藏”的高低互补，构建了汉南洞主街无可替代的音乐文化气场。",
+            num: 25
+          },
+          {
+            id: "leeum-museum-shop",
+            nameCn: "三星 Leeum 美术馆 & 艺术衍生品商店",
+            nameKr: "리움미술관 뮤지엄샵",
+            nameEn: "Leeum Museum of Art & Shop",
+            lat: 37.53848,
+            lng: 126.99918,
+            labelDir: "left",
+            address: "首尔龙山区梨泰院路55街 60-16 (서울 용산구 이태원로55길 60-16)",
+            tags: [
+              "三位普利兹克建筑奖大师联手",
+              "韩国国宝级古美术+当代艺术",
+              "顶流艺术衍生品店"
+            ],
+            brandIntro: "由三星集团文化财团于2004年创立的韩国第一私人美术馆，由马里奥·博塔、让·努维尔、雷姆·库哈斯三位建筑巨匠各自设计一栋展馆。",
+            storeDetail: "除了旋转楼梯等现象级建筑打卡点，其1楼大堂的“Leeum Museum Shop”更是韩国工艺美学的天花板——将青瓷、白瓷、螺钿漆器等韩国传统非遗转化为极具现代感的餐具、香插与文创礼品。",
+            diffHighlight: "它是整个汉南洞斜坡商业街的“流量北极星”——超过一半的游客都是以 Leeum 美术馆为起点，看完展顺着斜坡一路往下逛遍整条汉南洞。",
+            num: 26
+          }
+        ]
+      }
+    ]
+  },
+  "seongsu": {
+    id: "seongsu",
+    name: "圣水洞",
+    enName: "SEONGSU-DONG",
+    status: "30家核心旺店",
+    center: [
+      37.5438,
+      127.0558
+    ],
+    zoom: 15,
+    kakaoLevel: 4,
+    headline: "圣水洞：从手工鞋匠工厂区到亚洲先锋零售实验场",
+    retailOverview: "如果来首尔只能看一个商圈，90% 的咖啡与新零售从业者会首选圣水洞。这里打破了传统购物中心标准铺位的束缚，以500~3000㎡的独栋红砖废旧工厂、修车行和仓库为载体，成为全亚洲高概念快闪（Pop-up）、策展型旗舰店与工业风烘焙咖啡的最高密度聚集区。",
+    timeline: [
+      {
+        period: "1960s–1990s · 工业制造与手工皮鞋底色",
+        desc: "曾是首尔最大的轻工业制造基地之一，聚集了全韩70%以上的手工制鞋作坊、印刷厂、五金染色厂与汽车维修车间，留下了独特的红砖坡屋顶与无柱挑高厂房。"
+      },
+      {
+        period: "2011–2018 · 废墟工业风咖啡启蒙",
+        desc: "随着传统制造业衰退与租金洼地效应，以大林仓库（Daelim Changgo，2011）、Cafe Onion（2016）为代表的先锋主理人入驻，不粉饰斑驳水泥墙面，开创了席卷亚洲的“废墟工业风咖啡”浪潮。"
+      },
+      {
+        period: "2020至今 · 演武场路顶流快闪与重奢策展时代",
+        desc: "演武场路（Yeonmujang-gil）成为韩国品牌价值放大器。Dior 概念店、Tamburins 骨骼水泥建筑、Olive Young N 五层未来店相继落地，每月有超过80场品牌快闪在此轮番上演。"
+      }
+    ],
+    categories: [
+      {
+        id: "coffee",
+        name: "咖啡与烘焙旺店",
+        shortName: "咖啡/烘焙",
+        color: "#059669",
+        badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+        isSpecial: false,
+        description: "圣水洞的咖啡馆深刻影响了过去五年亚洲网红烘焙与工业风咖啡店的视觉体系——“前店后厂明档烘焙 + 中央巨型金属/石头摆台 + 极强单品记忆点”。",
+        stores: [
+          {
+            id: "cafe-onion-seongsu",
+            nameCn: "Cafe Onion 圣水1号店",
+            nameKr: "어니언 성수",
+            nameEn: "Cafe Onion Seongsu",
+            lat: 37.54478,
+            lng: 127.05042,
+            labelDir: "left",
+            address: "首尔城东区峨嵯山路9街 8 (서울 성동구 아차산로9길 8)",
+            tags: [
+              "废墟工业风鼻祖",
+              "雪山包 Pandoro",
+              "前店后厂烘焙"
+            ],
+            brandIntro: "由韩国设计创意团队 Fabrikr 主导创立的精品咖啡与烘焙品牌，核心壁垒在于对老旧建筑肌理的极致保留与高辨识度烘焙视觉。",
+            storeDetail: "前身建于1970年代，曾先后作为超市、食堂与金属零件修理厂。保留了断壁残垣与水泥地面，一楼中央长桌铺满数十款现烤面包（以撒满糖粉的“雪山包 Pandoro”最出圈）。",
+            diffHighlight: "安国店是全韩屋庭院木构风，广藏市场店是市井摊档胶带涂鸦风，而圣水店则是品牌的1号发源地与唯一纯正的重工业废墟风代表。",
+            num: 1
+          },
+          {
+            id: "daelim-changgo",
+            nameCn: "大林仓库 (Daelim Changgo) 画廊咖啡",
+            nameKr: "대림창고",
+            nameEn: "Daelim Changgo Gallery Cafe",
+            lat: 37.54185,
+            lng: 127.05635,
+            labelDir: "left",
+            address: "首尔城东区圣水二路 78 (서울 성동구 성수이로 78)",
+            tags: [
+              "1970年代碾米厂改造",
+              "圣水洞商业化起点",
+              "挑高10米无柱画廊"
+            ],
+            brandIntro: "圣水洞旧厂房商业化改造的元老级空间品牌，率先将工业仓储空间转化为收费时尚秀场、当代艺术画廊与烘焙咖啡馆。",
+            storeDetail: "前身为1970年代的红砖碾米厂。推开沉重的铁门，内部是挑高近10米的巨型双跨度厂房，保留了原始木桁架屋顶与废旧机械雕塑。",
+            diffHighlight: "如果说 Onion 做火了废墟风烘焙，大林仓库则是让整个韩国时尚圈意识到“圣水洞旧仓库可以用来办秀和开大店”的0号引爆点。",
+            num: 2
+          },
+          {
+            id: "camel-coffee-seongsu",
+            nameCn: "Camel Coffee 圣水本店",
+            nameKr: "카멜커피 성수점",
+            nameEn: "Camel Coffee Seongsu",
+            lat: 37.54192,
+            lng: 127.05815,
+            labelDir: "bottom",
+            address: "首尔城东区圣水二路7街 26 (서울 성동구 성수이로7길 26)",
+            tags: [
+              "小面积高坪效",
+              "招牌特调奶咖",
+              "主理人IP驱动"
+            ],
+            brandIntro: "由极具个人穿搭与审美风格的网红主理人 Mr. Camel 创立的复古街头精品咖啡品牌，凭借一款高甜醇厚的小杯签名奶咖火遍全韩。",
+            storeDetail: "藏在圣水洞支路小巷里的一间极小独栋民房改造店，门头是剥落的复古棕木与深绿色遮阳棚，室内摆满中古家具。",
+            diffHighlight: "虽然 Camel 后来在现代百货、清潭洞开了更宽敞的分店，但圣水这家是品牌的初代街巷精神图腾，是考察“几十平米小店如何靠单一爆品做出全国连锁”的必看样本。",
+            num: 3
+          },
+          {
+            id: "nudake-seongsu",
+            nameCn: "NUDAKE 圣水概念店 (Museum of Nudake)",
+            nameKr: "누데이크 성수",
+            nameEn: "NUDAKE Seongsu",
+            lat: 37.54155,
+            lng: 127.05515,
+            labelDir: "bottom",
+            address: "首尔城东区圣水二路7街 26 1楼 (서울 성동구 성수이로7길 26)",
+            tags: [
+              "巨型放大版甜点雕塑",
+              "圆形剧场展台",
+              "Gentle Monster跨界"
+            ],
+            brandIntro: "Gentle Monster 母公司 IICOMBINED 旗下的先锋艺术甜点品牌，每一家门店都设定一个完全不同的超现实主义展览母题。",
+            storeDetail: "以“味觉博物馆”为主题，入口处放置了一颗大如桌面的巨型逼真牛角包雕塑，主展厅采用纯白圆形剧场环绕式展台陈列抹茶熔岩羊角包（Peak）与微型荷兰松饼。",
+            diffHighlight: "相比岛山公园店（黑色长桌暗黑画廊风）与新沙店（牛角包怪兽便利店风），圣水店采用纯白圆形环形动线，视觉冲击力更加直接。",
+            num: 4
+          },
+          {
+            id: "center-coffee-seongsu",
+            nameCn: "Center Coffee 首尔林1号总店",
+            nameKr: "센터커피 서울숲점",
+            nameEn: "Center Coffee Seoul Forest",
+            lat: 37.54685,
+            lng: 127.04355,
+            labelDir: "left",
+            address: "首尔城东区首尔林2街 28-11 (서울 성동구 서울숲2길 28-11)",
+            tags: [
+              "英国WBC世界冠军主理",
+              "正对首尔林公园绿荫",
+              "瑰夏手冲标杆"
+            ],
+            brandIntro: "由英国咖啡师大赛冠军、知名咖啡烘焙顾问朴尚浩（Sang Ho Park）创立的殿堂级浅烘精品咖啡品牌。",
+            storeDetail: "紧邻首尔林公园入口的三层红砖极简小楼，二三楼拥有毫无遮挡的巨型玻璃窗，将首尔林的四季樱花与银杏树海尽收眼底，主打巴拿马瑰夏（Geisha）手冲。",
+            diffHighlight: "相比明洞或三成洞写字楼档口店，首尔林店是品牌的1号发源总店，完美结合了“世界级专业冲煮水准”与“城市公园景观溢价”。",
+            num: 5
+          },
+          {
+            id: "lowkey-coffee-seongsu",
+            nameCn: "Lowkey 圣水精品烘焙咖啡",
+            nameKr: "로우키 성수",
+            nameEn: "Lowkey Coffee Roasters Seongsu",
+            lat: 37.54515,
+            lng: 127.05325,
+            labelDir: "top",
+            address: "首尔城东区演武场3街 6 (서울 성동구 연무장3길 6)",
+            tags: [
+              "圣水洞咖啡圈口碑王",
+              "1楼街角+B1烘豆室",
+              "高复购专业豆单"
+            ],
+            brandIntro: "自2010年创立的韩国资深独立精品咖啡烘焙品牌，在韩国本土咖啡师同行圈内拥有极高声誉。",
+            storeDetail: "一楼是温馨的美式原木街角小店，推开暗门走入地下一层（B1），则是别有洞天的复古地下沙龙与专业烘豆实验室，提供多达十余种单品豆自选。",
+            diffHighlight: "在网红快餐式咖啡扎堆的演武场路，Lowkey 是少有的靠“硬核豆单品质+温暖主理人社区感”让周边上班族天天打卡的实力派总店。",
+            num: 6
+          },
+          {
+            id: "blue-bottle-seongsu",
+            nameCn: "Blue Bottle 蓝瓶咖啡 韩国1号首店 (圣水店)",
+            nameKr: "블루보틀 성수카페",
+            nameEn: "Blue Bottle Coffee Seongsu",
+            lat: 37.54795,
+            lng: 127.04565,
+            labelDir: "top",
+            address: "首尔城东区峨嵯山路 7 (서울 성동구 아차산로 7)",
+            tags: [
+              "蓝瓶进入韩国首店(2019)",
+              "芦泽启治建筑设计",
+              "下沉红砖中庭"
+            ],
+            brandIntro: "全球第三波精品咖啡浪潮代表品牌 Blue Bottle Coffee，2019年正式进入韩国市场时未选江南或明洞，而是落子圣水洞。",
+            storeDetail: "位于뚝섬(纛岛)站出口旁，由日本著名建筑师芦泽启治（Keiji Ashizawa）操刀：外部保留圣水洞红砖立面，顾客需顺着楼梯走入挑高通透的地下一层极简混凝土吧台，1楼设有专属烘焙工坊。",
+            diffHighlight: "全韩十余家蓝瓶咖啡中的“韩国1号开山总店”，配备独立烘豆中心与最全的韩国限定蓝瓶周边。",
+            num: 7
+          },
+          {
+            id: "rain-report-croissant",
+            nameCn: "Rain Report Croissant 圣水暴雨主题咖啡",
+            nameKr: "레인리포트 크로와상",
+            nameEn: "Rain Report Croissant Seongsu",
+            lat: 37.54095,
+            lng: 127.05925,
+            labelDir: "right",
+            address: "首尔城东区圣水二路16街 32 (서울 성동구 성수이로16길 32)",
+            tags: [
+              "365天人工降雨庭院",
+              "气象局概念牛角包店",
+              "沉浸式黑色水景"
+            ],
+            brandIntro: "Glow Seoul 团队继梨泰院1号店爆红后，在圣水洞打造的“全天候降雨气象台+法式可颂烘焙”旗舰空间。",
+            storeDetail: "将整座工厂仓库涂黑，户外与中庭水池每隔15分钟启动人工瓢泼大雨、雷电声效与水雾；室内以气象等高线为灵感陈列数十种创意千层可颂与黑色特调咖啡。",
+            diffHighlight: "相比梨泰院1号店（偏重竹林雨景），圣水2号店是专门聚焦“Croissant（精品牛角包烘焙矩阵）”的工厂级大店，二楼俯瞰雨池视角极佳。",
+            num: 8
+          },
+          {
+            id: "standard-bread-seongsu",
+            nameCn: "Standard Bread 圣水生吐司专门店",
+            nameKr: "스탠다드브레드 성수",
+            nameEn: "Standard Bread Seongsu",
+            lat: 37.54125,
+            lng: 127.05885,
+            labelDir: "left",
+            address: "首尔城东区圣水二路18街 37 (서울 성동구 성수이로18길 37)",
+            tags: [
+              "每30分钟出炉鲜吐司",
+              "木质谷仓庭院造景",
+              "焦糖法式吐司爆品"
+            ],
+            brandIntro: "伦敦贝果博物馆与 Artist Bakery 核心设计团队打造的又一单品排队王——这次将目光锁定在“刚出炉热气腾腾的手撕生吐司（Brioche & Milk Bread）”。",
+            storeDetail: "前院用大量原木堆砌出欧洲乡村谷仓与麦田感，店内墙上挂满电子倒计时牌，实时播报盐黄油生吐司、焦糖布丁法式吐司的出炉分钟数，搭配十余种果酱与黄油。",
+            diffHighlight: "圣水店是该品牌的1号发源首店（早于岛山店），完整展示了“把最普通的白吐司通过出炉时间倒计时仪式感做成排队3小时爆品”的运营逻辑。",
+            num: 9
+          },
+          {
+            id: "jayongdo-salt-bread-seongsu",
+            nameCn: "自然岛盐面包 (Jayeongdo) 圣水店",
+            nameKr: "자연도소금빵 in 성수",
+            nameEn: "Jayeongdo Salt Bread Seongsu",
+            lat: 37.54295,
+            lng: 127.05695,
+            labelDir: "right",
+            address: "首尔城东区演武场街 56-1 (서울 성동구 연무장길 56-1)",
+            tags: [
+              "全店只卖1个SKU!",
+              "一袋4个捆绑销售",
+              "极致单品外带坪效神话"
+            ],
+            brandIntro: "发源于仁川永宗岛、在圣水洞演武场路创造日销万袋奇迹的极致单品烘焙品牌。",
+            storeDetail: "没有堂食座位，甚至没有第二种口味！全店只卖一款用加拿大最高级小麦、法国AOP黄油与海盐烤制的“原味盐面包”，且强制按“1袋4个（12,000韩元）”整袋打包售卖，复古牛皮纸袋用麻绳系好。",
+            diffHighlight: "这是全首尔烘焙界最极致的“单SKU外带档口模型”——通过砍掉一切选择成本与堂食成本，仅凭20㎡档口+街头飘香烤炉，实现堪比整栋咖啡馆的日营业额。",
+            num: 10
+          }
+        ]
+      },
+      {
+        id: "supermarket",
+        name: "商超与生活方式集合大店",
+        shortName: "商超/集合店",
+        color: "#2563eb",
+        badgeBg: "bg-blue-100 text-blue-900 border-blue-300",
+        isSpecial: false,
+        description: "在圣水洞，美妆商超、生鲜大卖场与酒类便利店都彻底重构了货架逻辑，成为品牌的“未来实验室”。",
+        stores: [
+          {
+            id: "olive-young-n",
+            nameCn: "Olive Young N 圣水旗舰店",
+            nameKr: "올리브영N 성수",
+            nameEn: "Olive Young N Seongsu",
+            lat: 37.54395,
+            lng: 127.05375,
+            labelDir: "bottom",
+            address: "首尔城东区演武场7街 13 (서울 성동구 연무장7길 13)",
+            tags: [
+              "五层4600㎡未来店",
+              "美妆商超终极形态",
+              "皮肤诊断与VIP酒廊"
+            ],
+            brandIntro: "CJ集团旗下的韩国国民级健康与美妆集合商超，市占率超过70%。",
+            storeDetail: "共5层、总面积超4600㎡的超级复合空间。1楼不做传统密集货架，而是做成大型主题策展区与烘焙咖啡吧；2~3楼提供专业仪器测肤与定制彩妆；4楼设有VIP会员休息室与直播间。",
+            diffHighlight: "全韩1300多家 Olive Young 中唯一冠以“N（New/Next/Nest）”字头的未来实验室店，彻底把美妆商超做成了可逛2小时的美妆主题乐园。",
+            num: 11
+          },
+          {
+            id: "emart-seongsu-renew",
+            nameCn: "Door To Seongsu (GS25 旗舰概念便利店)",
+            nameKr: "도어투성수",
+            nameEn: "Door To Seongsu (GS25 Flagship)",
+            lat: 37.54325,
+            lng: 127.05585,
+            labelDir: "left",
+            address: "首尔城东区演武场街 38-1 (서울 성동구 연무장길 38-1)",
+            tags: [
+              "便利店变身快闪策展馆",
+              "Won Soju等爆品首发地",
+              "白天咖啡晚间精酿吧"
+            ],
+            brandIntro: "韩国零售巨头 GS集团旗下国民便利店 GS25 专门在圣水洞演武场路中心开设的“零常规货架”概念旗舰店。",
+            storeDetail: "店内超过60%面积可像积木一样随时重组，每隔2~3周围绕一个爆款自有品牌（如朴宰范 Won Soju 烧酒、黄油啤酒、联名甜甜圈）举办大型沉浸式快闪，常规便利店商品仅保留在后方一排极简冷柜中。",
+            diffHighlight: "全韩上万家 GS25 中唯一的“快闪策展专营店”，展示了传统便利店巨头如何利用核心街区门店做自有品牌（PB）孵化器。",
+            num: 12
+          },
+          {
+            id: "wx-seoul-forest-galleria",
+            nameCn: "The Wine Collective / 圣水自然酒与食杂超市 (보틀벙커/와인샵)",
+            nameKr: "세스크멘슬",
+            nameEn: "Ceskmensl Charcuterie & Grocery Seongsu",
+            lat: 37.54615,
+            lng: 127.05185,
+            labelDir: "top",
+            address: "首尔城东区圣水一路12街 15 (서울 성동구 성수이로12길 15)",
+            tags: [
+              "欧洲肉铺商超模型",
+              "自制德式香肠冷切",
+              "红砖工业风杂货"
+            ],
+            brandIntro: "由专业肉类匠人创立的欧洲手工冷切肉铺与精品食杂超市（Butcher & Grocery）。",
+            storeDetail: "将圣水洞旧厂房改造为全透明低温肉制品工坊与欧式杂货超市，顾客既可购买按克称重的开心果火腿、萨拉米、手工黄油与自然酒回家，也可直接在店内立吞或堂食三明治。",
+            diffHighlight: "展示了“前店立吞三明治 + 后厂手工肉制品商超零售”在年轻潮流街区的高客单跑通路径。",
+            num: 13
+          },
+          {
+            id: "cu-ramen-library-seongsu",
+            nameCn: "聖水 韩国酒类与传统米酒策展商超 (술마켓/축제의술)",
+            nameKr: "서울숲 와인아울렛",
+            nameEn: "Seoul Forest Wine & Makgeolli Outlet",
+            lat: 37.54725,
+            lng: 127.04685,
+            labelDir: "right",
+            address: "首尔城东区往十里路 115 (서울 성동구 왕십리로 115)",
+            tags: [
+              "上千款精酿与新派米酒",
+              "仓储式量贩陈列",
+              "芝士下酒菜一站式配齐"
+            ],
+            brandIntro: "首尔林与圣水洞片区规模最大的酒类与佐酒美食量贩集合超市。",
+            storeDetail: "仓储式挑高空间，除了全球葡萄酒与威士忌，更专门开辟了韩国近年来爆火的“新派气泡米酒（Makgeolli，如虎米酒、福顺都家）”与精酿烧酒专区，配套数百种进口奶酪与橄榄。",
+            diffHighlight: "精准承接了圣水洞周边赴首尔林公园野餐（Picnic）的年轻客群，提供免费冰袋与野餐杯具连带销售。",
+            num: 14
+          }
+        ]
+      },
+      {
+        id: "cultural",
+        name: "品牌文创与香氛设计",
+        shortName: "品牌文创",
+        color: "#9333ea",
+        badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
+        isSpecial: false,
+        description: "圣水洞的文创、香氛与彩妆概念店擅长将日常器物通过极致的剧场灯光与建筑叙事，卖出高溢价与礼品属性。",
+        stores: [
+          {
+            id: "point-of-view",
+            nameCn: "Point of View 三层文具选品店",
+            nameKr: "포인트오브뷰 서울",
+            nameEn: "Point of View Seoul",
+            lat: 37.54355,
+            lng: 127.05485,
+            labelDir: "left",
+            address: "首尔城东区演武场街 18 1~3楼 (서울 성동구 연무장길 18)",
+            tags: [
+              "三层文具博物馆",
+              "剧场级聚光灯陈列",
+              "高毛利自有文创"
+            ],
+            brandIntro: "由圣水洞知名复合空间 Zagmachi 主理人创立的高端文具与桌面美学策展品牌，主张“文具是帮助创作者确立视角的工具”。",
+            storeDetail: "三层独栋空间：1楼偏重书写工具、印章与自有品牌纸品；2楼结合古典木柜与剧场级聚光灯，陈列来自全球的剪刀、黄铜镇纸与桌面器物；3楼为灵感图书与艺术展陈。",
+            diffHighlight: "圣水洞三层独栋总店拥有完整的暗调声光动线与最高比例的独家联名商品，是零售同行学习“如何靠道具陈列把低单价标品做成高毛利礼品”的教科书。",
+            num: 15
+          },
+          {
+            id: "tamburins-seongsu",
+            nameCn: "Tamburins 圣水旗舰店",
+            nameKr: "탬버린즈 성수 플래그십스토어",
+            nameEn: "Tamburins Seongsu Flagship",
+            lat: 37.54392,
+            lng: 127.05818,
+            labelDir: "right",
+            address: "首尔城东区演武场5街 8 (서울 성동구 연무장5길 8)",
+            tags: [
+              "混凝土骨架废墟建筑",
+              "下沉式香氛画廊",
+              "Gentle Monster同门"
+            ],
+            brandIntro: "由 Gentle Monster 母公司 IICOMBINED 孵化的艺术香氛与个护品牌，凭借链条护手霜、蛋形唇膏及仿真装置艺术迅速成为亚洲现象级伴手礼品牌。",
+            storeDetail: "正好开在 Dior 圣水店正对面。地面层刻意只保留了一座历史建筑裸露的钢筋混凝土骨架与枯木花园；真正的零售空间完全隐藏在地下一层（B1）。",
+            diffHighlight: "新沙店、三清洞店与汉南店均为多层地上独栋，唯独圣水店采用“地上极简废墟艺术骨架 + 地下沉浸式卖场”的反常规建筑结构。",
+            num: 16
+          },
+          {
+            id: "fwee-agit-seongsu",
+            nameCn: "fwee Agit 圣水布丁膏彩妆文创店",
+            nameKr: "퓌 아지트 성수",
+            nameEn: "fwee Agit Seongsu",
+            lat: 37.54315,
+            lng: 127.05425,
+            labelDir: "bottom",
+            address: "首尔城东区圣水二路7街 10 (서울 성동구 성수이로7길 10)",
+            tags: [
+              "彩妆买赠钥匙扣挂件引爆全网",
+              "30色唇颊布丁膏",
+              "多巴胺果冻色空间"
+            ],
+            brandIntro: "2024–2026年全韩国最火爆的彩妆黑马品牌，仅靠一款“30种色号的唇颊两用布丁膏（Pudding Pot）”及天才般的营销策略——**买正装即现场自选颜色免费灌装一枚迷你钥匙扣挂件**，引发全城排队。",
+            storeDetail: "被称为“fwee 秘密基地（Agit）”的蓝色与银色多巴胺独栋小屋，院内有巨型果冻熊装置，店内收银台旁设置像糖果铺一样的“迷你钥匙扣DIY挖取灌装区”。",
+            diffHighlight: "作为品牌全球1号旗舰总店，它向所有快消与文创从业者展示了：如何把“美妆小样赠品”彻底改造成年轻人主动挂在名牌包上的“潮流文创包挂（Keyring）”，从而实现病毒式社交裂变。",
+            num: 17
+          },
+          {
+            id: "het-ras-seongsu",
+            nameCn: "SW19 / Le Labo 圣水工业风香氛实验店",
+            nameKr: "르라보 성수점",
+            nameEn: "Le Labo Seongsu",
+            lat: 37.54435,
+            lng: 127.05545,
+            labelDir: "top",
+            address: "首尔城东区演武场街 33 (서울 성동구 연무장길 33)",
+            tags: [
+              "纽约手工慢香水",
+              "圣水旧厂房定制装潢",
+              "现场贴标印名服务"
+            ],
+            brandIntro: "雅诗兰黛集团旗下的纽约殿堂级手工慢香水品牌（代表作 Santal 33），讲究每家门店都深度融入所在街区的旧建筑肌理。",
+            storeDetail: "直接利用圣水洞老厂房斑驳的红砖与生锈铁窗，搭配复古药剂师操作台，调香师现场为客人调制香水并在瓶身打印专属姓名与圣水店购买日期。",
+            diffHighlight: "相比百货专柜，圣水洞独立街铺店的空间氛围与品牌源于纽约布鲁克林工业区的基因最为契合。",
+            num: 18
+          },
+          {
+            id: "thingool-seongsu",
+            nameCn: "Thingool Store 圣水生活器物集合店",
+            nameKr: "띵굴스토어 성수",
+            nameEn: "Thingool Store Seongsu",
+            lat: 37.54535,
+            lng: 127.05455,
+            labelDir: "left",
+            address: "首尔城东区圣水二路14街 14 圣水联邦 1楼 (서울 성동구 성수이로14길 14)",
+            tags: [
+              "韩国最大生活市集实体化",
+              "陶瓷餐具与本土酱料",
+              "主妇与买手通吃"
+            ],
+            brandIntro: "起源于韩国知名生活博主发起的线下跳蚤市集“Thingool Market”，后成功转型为常设型生活方式选品百货。",
+            storeDetail: "位于圣水联邦文创园一楼，精选了全韩数百个小众手工艺人的粗陶餐盘、黄铜餐具、有机大酱、济州岛果酱与织物家居品。",
+            diffHighlight: "圣水店是其从快闪市集走向实体固定门店的标杆店，选品极具韩国本土烟火气与高级审美。",
+            num: 19
+          },
+          {
+            id: "kinfolk-notes-seongsu",
+            nameCn: "Kinfolk Notes 圣水慢生活香氛画廊",
+            nameKr: "킨포크노츠 성수",
+            nameEn: "Kinfolk Notes Seongsu",
+            lat: 37.54445,
+            lng: 127.05685,
+            labelDir: "right",
+            address: "首尔城东区演武场街 57 (서울 성동구 연무장길 57)",
+            tags: [
+              "全球慢生活杂志Kinfolk跨界",
+              "北欧极简木质美学",
+              "沙龙香水与身体护理"
+            ],
+            brandIntro: "由全球最具影响力的慢生活独立杂志《Kinfolk》官方授权并在韩国首发孵化的高定香氛与个护品牌。",
+            storeDetail: "将杂志纸面上的北欧静物摄影直接还原为三维空间：大面积留白墙面、天然原木展台与干花装置，售卖以丹麦哥本哈根花园、巴黎书店为灵感的香水与护手霜。",
+            diffHighlight: "全球首家《Kinfolk》香氛实体旗舰店就选址在圣水洞演武场路，是“纸媒出版IP跨界高毛利美妆个护零售”的典范之作。",
+            num: 20
+          },
+          {
+            id: "kuoca-seongsu",
+            nameCn: "KUOCA 圣水鲜制护肤工坊店",
+            nameKr: "쿠오카 성수",
+            nameEn: "KUOCA Seongsu Flagship",
+            lat: 37.54265,
+            lng: 127.05745,
+            labelDir: "bottom",
+            address: "首尔城东区演武场街 29-1 (서울 성동구 연무장길 29-1)",
+            tags: [
+              "Fine Dining理念做护肤品",
+              "制造后30天内鲜售",
+              "白松露/罗勒护手霜"
+            ],
+            brandIntro: "从圣水洞发迹的韩国高端极简护肤品牌，独创性地将米其林高级餐厅（Fine Dining）概念引入化妆品——采用白松露、黑茶、野桃等食材级香气，并坚持小批量新鲜调配。",
+            storeDetail: "门头与室内宛如一间精致的法式甜品厨房，不锈钢台面上陈列色彩柔和的渐变色金属管护手霜与身体乳。",
+            diffHighlight: "圣水店是品牌的1号起家总店，展示了新锐护肤品牌如何借用“餐饮界的新鲜度叙事（Freshly Made）”切入红海市场。",
+            num: 21
+          }
+        ]
+      },
+      {
+        id: "fashion",
+        name: "潮流服饰与先锋买手旗舰",
+        shortName: "潮流/买手",
+        color: "#e11d48",
+        badgeBg: "bg-rose-100 text-rose-900 border-rose-300",
+        isSpecial: false,
+        description: "圣水洞演武场路是目前韩国本土时装品牌开“千坪级概念大店”最密集的街道。",
+        stores: [
+          {
+            id: "ader-error-seongsu",
+            nameCn: "ADER ERROR 圣水 Space 2.0 宇宙飞船旗舰店",
+            nameKr: "아더에러 성수스페이스",
+            nameEn: "ADER ERROR Seongsu Space",
+            lat: 37.54285,
+            lng: 127.05655,
+            labelDir: "left",
+            address: "首尔城东区圣水二路 82 (서울 성동구 성수이로 82)",
+            tags: [
+              "百万级科幻电影布景",
+              "异次元生物雕塑",
+              "大林仓库正对面"
+            ],
+            brandIntro: "韩国先锋设计潮牌 ADER ERROR 斥巨资打造的 Space 2.0 旗舰空间。",
+            storeDetail: "正对大林仓库。推门瞬间如同进入《银翼杀手》或外星飞船腹地：地面铺设发光光纤与怪诞的外星骨骼雕塑，中央是环形机械声学反应堆，成衣与鞋履被放置在未来主义太空舱内。",
+            diffHighlight: "如果说弘大店是怪诞青年实验室，那么圣水 Space 2.0 则是造价最高、空间尺度最宏大的“科幻主题乐园级服装店”，被全球零售设计大奖屡屡收录。",
+            num: 22
+          },
+          {
+            id: "kith-seoul-seongsu",
+            nameCn: "KITH Seoul 圣水四层独栋旗舰店",
+            nameKr: "키스 서울 성수",
+            nameEn: "KITH Seoul Flagship Seongsu",
+            lat: 37.54215,
+            lng: 127.05985,
+            labelDir: "right",
+            address: "首尔城东区演武场街 70 (서울 성동구 연무장길 70)",
+            tags: [
+              "纽约殿堂级潮牌韩国首店(2024)",
+              "Kith Treats麦片冰淇淋",
+              "Sadelle's早午餐"
+            ],
+            brandIntro: "由传奇球鞋主理人 Ronnie Fieg 在纽约创立的全球顶流街头奢华买手集合店（继东京、巴黎、伦敦后亚洲第二家独立旗舰）。",
+            storeDetail: "四层豪华独栋：1楼为 Kith Treats 定制谷物冰淇淋吧与配饰，2楼为全系联名成衣与限量球鞋墙，3~4楼直接把纽约传奇犹太贝果早午餐餐厅 Sadelle's 搬到圣水洞。",
+            diffHighlight: "全韩唯一门店！KITH 放弃江南清潭洞而把韩国首店直接开在圣水洞东端，标志着圣水洞正式加冕为国际顶流街头品牌的韩国第一落脚点。",
+            num: 23
+          },
+          {
+            id: "stand-oil-seongsu",
+            nameCn: "STAND OIL 圣水女包旗舰店",
+            nameKr: "스탠드오일 성수플래그십스토어",
+            nameEn: "STAND OIL Seongsu Flagship",
+            lat: 37.54335,
+            lng: 127.05725,
+            labelDir: "bottom",
+            address: "首尔城东区演武场11街 19 (서울 성동구 연무장11길 19)",
+            tags: [
+              "千元级纯素皮革法棍包王",
+              "旋转传送带包袋展陈",
+              "双层极简独栋"
+            ],
+            brandIntro: "专注于高性价比纯素皮革（Vegan Leather）复古腋下包、保龄球包与保龄球鞋的韩国现象级女包品牌（主力价格带10万韩元左右，约500~600元人民币）。",
+            storeDetail: "双层独栋旗舰：1楼不卖货，全部用来做巨型机械旋转包袋传送带与互动拍照装置；2楼才是全系列包袋试背与收银区，门口排队常年绕楼半圈。",
+            diffHighlight: "品牌全球唯一双层独立旗舰店，“1楼纯艺术装置引流 + 2楼高效率开单转化”的垂直分工极其清晰。",
+            num: 24
+          },
+          {
+            id: "matin-kim-seongsu",
+            nameCn: "Matin Kim 圣水1号起家概念店 (House By)",
+            nameKr: "마뗑킴 성수 플래그십스토어",
+            nameEn: "Matin Kim Seongsu Flagship",
+            lat: 37.54405,
+            lng: 127.05665,
+            labelDir: "left",
+            address: "首尔城东区演武场街 13 (서울 성동구 연무장길 13)",
+            tags: [
+              "品牌线下神话起点",
+              "粗粝水泥工业风",
+              "铁牌包袋首发地"
+            ],
+            brandIntro: "千亿韩元级设计师品牌 Matin Kim 从线上走向线下的首家旗舰店。",
+            storeDetail: "位于演武场路西段起点，将粗粝的水泥墙面与精细的金属衣架结合，集中展示全系列铁牌钱包、降落伞工装裙与联名款。",
+            diffHighlight: "圣水店是 Matin Kim 的线下发源地，相比明洞三层大众店，圣水店保留了最纯正的先锋买手Showroom质感。",
+            num: 25
+          },
+          {
+            id: "musinsa-store-seongsu-daelim",
+            nameCn: "MUSINSA Store 圣水@大林仓库 (球鞋与女装潮牌巨舰)",
+            nameKr: "무신사 스토어 성수@대림창고",
+            nameEn: "MUSINSA Store Seongsu Daelim Changgo",
+            lat: 37.54198,
+            lng: 127.05618,
+            labelDir: "right",
+            address: "首尔城东区圣水二路 74 (서울 성동구 성수이로 74)",
+            tags: [
+              "2024全新揭幕红砖大店",
+              "逾百米限量球鞋墙",
+              "K-Fashion女装最高密度"
+            ],
+            brandIntro: "MUSINSA 租下大林仓库隔壁另一半巨型红砖旧厂房，于2024年9月重磅开业的线下新零售旗舰。",
+            storeDetail: "在保留50年红砖仓库木屋架的同时，植入超现代银色科技展台，专攻高人气韩国独立女装品牌与整墙限量运动球鞋，开业首月即创下数十亿韩元销售纪录。",
+            diffHighlight: "与同在圣水洞的 E( )PTY（高冷先锋买手店）不同，这家大林仓库店100%聚焦“当下小红书与IG最爆火的100个韩国少女潮牌与球鞋”，转化率极高。",
+            num: 26
+          }
+        ]
+      },
+      {
+        id: "special",
+        name: "商圈独有特色：策展型快闪与厂房复合社区",
+        shortName: "特色：策展与复合体",
+        color: "#d97706",
+        badgeBg: "bg-amber-100 text-amber-900 border-amber-300",
+        isSpecial: true,
+        description: "圣水洞区别于首尔其他商圈的终极壁垒在于「空间即媒体」与「非标厂房园区改造」——无论是国际顶奢还是韩国老牌国民食品，都在这里建起了不以直接卖货为第一目的的品牌神殿。",
+        stores: [
+          {
+            id: "dior-seongsu",
+            nameCn: "Dior 圣水温室概念店",
+            nameKr: "디올 성수",
+            nameEn: "Dior Seongsu",
+            lat: 37.54415,
+            lng: 127.05785,
+            labelDir: "right",
+            address: "首尔城东区演武场5街 7 (서울 성동구 연무장5길 7)",
+            tags: [
+              "重奢本土化标杆",
+              "温室花园建筑",
+              "数字化预约动线"
+            ],
+            brandIntro: "法国LVMH集团旗下顶级时装屋 Christian Dior 在圣水洞打造的传奇概念店。",
+            storeDetail: "受巴黎蒙田大道30号总店启发，以金属网格与通透玻璃在圣水洞街头搭建出一座挑高温室宫殿，外围环绕韩国本土野花与松树庭院，内部集成展厅与 Café Dior。",
+            diffHighlight: "不同于百货公司内封闭高冷的传统重奢专柜，圣水店是全韩唯一采用全透明街边玻璃温室结构、将本土韩屋自然造景与法式铁艺结合的门店，一己之力将圣水洞推上重奢高度。",
+            num: 27
+          },
+          {
+            id: "lcdc-seoul",
+            nameCn: "LCDC SEOUL 四层修车厂复合空间",
+            nameKr: "엘씨디씨 서울",
+            nameEn: "LCDC SEOUL",
+            lat: 37.54602,
+            lng: 127.05895,
+            labelDir: "top",
+            address: "首尔城东区演武场17街 10 (서울 성동구 연무장17길 10)",
+            tags: [
+              "汽车修理厂改造",
+              "四层垂直社区",
+              "小众主理人孵化"
+            ],
+            brandIntro: "由韩国时装集团 SJ Group 发起并打造的商业地产与生活方式内容运营品牌。",
+            storeDetail: "将一座四层高的旧汽车修理厂改造为带中庭广场的垂直商业综合体：1楼为网红咖啡厅 Ephemera 与快闪展厅，2楼为自营选品店，3楼聚集了6~8家微型独立设计师文创小店，4楼为天台酒吧。",
+            diffHighlight: "它是“大品牌做房东+策展人、小主理人贡献内容度”的微型非标商业体模板。3楼每个房间仅15~25㎡，极好地解决了独立小品牌进驻核心商圈成本过高的痛点。",
+            num: 28
+          },
+          {
+            id: "empty-seongsu",
+            nameCn: "E( )PTY 圣水先锋买手实验馆",
+            nameKr: "엠프티 성수",
+            nameEn: "MUSINSA EMPTY Seongsu",
+            lat: 37.54468,
+            lng: 127.05612,
+            labelDir: "top",
+            address: "首尔城东区圣水二路 97 (서울 성동구 성수이로 97)",
+            tags: [
+              "Musinsa高街实验店",
+              "巨型集装箱动线",
+              "先锋小众设计师"
+            ],
+            brandIntro: "由 MUSINSA 打造的高端先锋买手集合空间，旨在填补大众潮牌与前卫实验时装之间的空白。",
+            storeDetail: "四层工业风巨型建筑，店内使用冷峻的蓝色工业货架、悬空钢索与金属旋转楼梯，汇集全球及韩国本土极具实验性的新锐设计师品牌。",
+            diffHighlight: "如果说 Musinsa Standard 是对标优衣库的大众基本款大店，那么 E( )PTY 则是集团专门用来树审美高度的“买手美术馆”。",
+            num: 29
+          },
+          {
+            id: "seongsu-yeonbang",
+            nameCn: "圣水联邦 (Seongsu Yeonbang) 化工厂文创园",
+            nameKr: "성수연방",
+            nameEn: "Seongsu Yeonbang Cultural Complex",
+            lat: 37.54545,
+            lng: 127.05468,
+            labelDir: "left",
+            address: "首尔城东区圣水二路14街 14 (서울 성동구 성수이로14길 14)",
+            tags: [
+              "1970年代化工厂U型改造",
+              "三楼玻璃温室咖啡天谷",
+              "OTD城市更新代表作"
+            ],
+            brandIntro: "由韩国知名空间商业运营机构 OTD Corporation 操盘的旧厂房微更新标杆项目。",
+            storeDetail: "改造自1970年代的三层U型化学工厂：保留中庭露天广场，1楼引入生活选品店 Thingool 与手工焦糖店 Index Caramel，2楼为特色书店与餐饮，3楼屋顶搭建了全透明玻璃温室咖啡馆“天上家屋”。",
+            diffHighlight: "是国内存量厂房改造项目（如2000~3000㎡小型工业大院）学习“如何通过中庭连廊与屋顶玻璃房激活三楼死角铺位”的经典教案。",
+            num: 30
+          }
+        ]
+      }
+    ]
+  },
+  "gangnam": {
+    id: "gangnam",
+    name: "江南",
+    enName: "GANGNAM / DOSAN",
+    status: "27家核心旺店",
+    center: [
+      37.5238,
+      127.0325
+    ],
+    zoom: 14,
+    kakaoLevel: 5,
+    headline: "江南（岛山公园/新沙/清潭）：汉江以南财富高地与建筑级旗舰丛林",
+    retailOverview: "江南商圈的核心看点目前已高度聚焦在**岛山公园（Dosan Park）**、**新沙洞林荫道（Garosu-gil）**与**清潭洞名品街**。如果说圣水洞玩的是旧厂房改造，那么江南玩的就是“不计成本的先锋建筑设计与集团级多业态协同”。这里既有 Gentle Monster 母公司打造的五层实验大楼 Haus Dosan，也有伦敦贝果博物馆带庭院的独栋旗舰，是观察韩国高客单价品牌旗舰店标准制式的核心区。",
+    timeline: [
+      {
+        period: "1970s–1980s · 永东开发计划与精英南迁",
+        desc: "首尔政府推动汉江南岸开发（永东地区），名校学区、高端百货（狎鸥亭现代与Galleria）与大企业总部南迁，奠定了韩国最富裕阶层的消费基本盘。"
+      },
+      {
+        period: "1990s–2015 · 新沙洞林荫道与清潭洞名品街黄金时代",
+        desc: "新沙洞林荫道凭借银杏树街景与海外快时尚、设计师买手店成为首尔街拍圣地；清潭洞则聚集了国际顶奢建筑旗舰店。"
+      },
+      {
+        period: "2020至今 · 岛山公园（Dosan Park）崛起为新潮奢宇宙中心",
+        desc: "商业重心从新沙主街向东侧静谧的岛山公园周边转移，IICOMBINED（Haus Dosan）、Supreme韩国首店、伦敦贝果博物馆等顶流品牌纷纷围着公园扎堆开出独栋总部级旗舰。"
+      }
+    ],
+    categories: [
+      {
+        id: "coffee",
+        name: "咖啡与烘焙旺店",
+        shortName: "咖啡/烘焙",
+        color: "#059669",
+        badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+        isSpecial: false,
+        description: "江南的烘焙咖啡代表了韩国餐饮娱乐化的最高工业水准——把贝果、吉事果和羊角包做出奢侈品展览感或欧式庄园感。",
+        stores: [
+          {
+            id: "nudake-dosan",
+            nameCn: "NUDAKE 岛山旗舰店 (艺术甜点)",
+            nameKr: "누데이크 하우스도산",
+            nameEn: "NUDAKE Haus Dosan",
+            lat: 37.52518,
+            lng: 127.03588,
+            labelDir: "bottom",
+            address: "首尔江南区狎鸥亭路46街 50 B1 (서울 강남구 압구정로46길 50 지하1층)",
+            tags: [
+              "美术馆式选餐动线",
+              "抹茶熔岩羊角Peak",
+              "黑色极简长桌"
+            ],
+            brandIntro: "IICOMBINED 集团旗下的先锋艺术甜点与咖啡品牌（名称源自 New + Different + Cake），由甜点师、空间设计师与视觉导演跨界共创。",
+            storeDetail: "位于 Haus Dosan 地下一层。彻底颠覆传统面包店“拿托盘夹面包”的逻辑——店内中央是一张数十米长的黑色极简展台，每一款甜点像雕塑艺术品一样单独摆放并配有展签。",
+            diffHighlight: "圣水店以“巨型放大版餐具”为主题，新沙店主打“牛角包怪兽主题”，而岛山店则是品牌首家奠定“美术馆长桌看展式点单”的1号经典总店。",
+            num: 1
+          },
+          {
+            id: "london-bagel-dosan",
+            nameCn: "伦敦贝果博物馆 岛山店",
+            nameKr: "런던베이글뮤지엄 도산점",
+            nameEn: "London Bagel Museum Dosan",
+            lat: 37.52625,
+            lng: 127.03665,
+            labelDir: "top",
+            address: "首尔江南区彦州路168街 33 1~2楼 (서울 강남구 언주로168길 33)",
+            tags: [
+              "韩国排队王神话",
+              "大葱乳酪贝果",
+              "英伦复古砖墙与周边"
+            ],
+            brandIntro: "由 Cafe Layered 创始团队于2021年推出的现象级烘焙品牌，将原本口感偏硬的犹太贝果改良为符合亚洲人口感的“汤种软韧贝果”。",
+            storeDetail: "就在 Haus Dosan 隔壁街角的双层独栋小楼。1楼是堆满数十款现烤贝果与多达十余种抹酱的紧凑选购区，2楼为堂食区及售卖马克杯、帆布袋的品牌周边区。",
+            diffHighlight: "安国1号店仅有一层且堂食极窄，蚕室店位于商场内；唯独江南岛山店拥有完整的双层独栋洋房结构与二楼完整文创周边陈列区。",
+            num: 2
+          },
+          {
+            id: "felt-coffee-dosan",
+            nameCn: "FELT Coffee 岛山公园店",
+            nameKr: "펠트커피 도산공원점",
+            nameEn: "FELT Coffee Dosan Park",
+            lat: 37.52285,
+            lng: 127.03595,
+            labelDir: "left",
+            address: "首尔江南区彦州路164街 23 (서울 강남구 언주로164길 23)",
+            tags: [
+              "极简声学混凝土空间",
+              "无菜单视觉干扰",
+              "Juun.J旗舰店共生"
+            ],
+            brandIntro: "韩国精品咖啡界以“极致减法美学”著称的代表品牌，主张剥离一切多余装饰，让顾客专注咖啡风味与音乐。",
+            storeDetail: "与知名男装定制品牌 Juun.J 旗舰店共享同一座黑色几何建筑的庭院。室内全无常规桌椅，仅由环绕式水泥阶梯与一张长吧台构成，甚至把意式咖啡机沉入台面以下。",
+            diffHighlight: "光化门店位于写字楼地下，昌前洞首店面积狭小；岛山公园店与顶级时装屋建筑共融，展示了重度极简咖啡如何与高奢时装旗舰店做跨界邻里配套。",
+            num: 3
+          },
+          {
+            id: "minute-papillon-dosan",
+            nameCn: "Minute Papillon 岛山吉事果专门店",
+            nameKr: "미누트빠삐용",
+            nameEn: "Minute Papillon Churros Dosan",
+            lat: 37.52645,
+            lng: 127.03725,
+            labelDir: "right",
+            address: "首尔江南区 도산대로51길 37 B1 (서울 강남구 도산대로51길 37)",
+            tags: [
+              "GFFG集团排队新物种",
+              "把游乐园吉事果做成法式甜点",
+              "复古剧院售票亭门头"
+            ],
+            brandIntro: "由打造了 Knotted 甜甜圈的韩国餐饮巨头 GFFG 推出的又一单品爆款品牌——把原本只在游乐园路边摊卖的西班牙炸油条（Churros 吉事果）升级为精致下午茶。",
+            storeDetail: "就在伦敦贝果博物馆岛山店斜对面。门头设计成1920年代巴黎复古电影院售票亭，地下空间如同老式火车车厢，主打现炸肉桂糖吉事果配浓郁花生巧克力蘸酱与浓缩咖啡。",
+            diffHighlight: "清潭岛山店是品牌的1号全国首店，与隔壁伦敦贝果博物馆共同构成了全首尔排队最夸张的“碳水烘焙十字路口”。",
+            num: 4
+          },
+          {
+            id: "nudake-sinsa",
+            nameCn: "NUDAKE 新沙旗舰店 (The Croissant 牛角包主题馆)",
+            nameKr: "누데이크 신사",
+            nameEn: "NUDAKE Sinsa The Croissant",
+            lat: 37.52015,
+            lng: 127.02185,
+            labelDir: "left",
+            address: "首尔江南区江南大路162街 43 (서울 강남구 강남대로162길 43)",
+            tags: [
+              "巨型牛角包门把手",
+              "羊角包饭团/怪兽汉堡",
+              "潮玩便利店风格"
+            ],
+            brandIntro: "NUDAKE 在新沙洞林荫道支巷开辟的第三家独立主题门店，全店100%围绕“Croissant（可颂牛角包）”单一元素展开天马行空的解构。",
+            storeDetail: "一进门就能看到比人还高的巨型酥皮牛角包雕塑，连店门把手都是真可颂造型；店内首创了形似三角饭团的“可颂饭团（Onigiri Croissant，内含明太子或泡菜馅）”与巨型可颂汉堡。",
+            diffHighlight: "如果说岛山店是高冷的暗黑美术馆，新沙店则是俏皮幽默的“波普风可颂游乐场”，其开发的三角饭团造型可颂直接引发全亚洲烘焙同行争相模仿。",
+            num: 5
+          },
+          {
+            id: "mammamia-dosan",
+            nameCn: "Mamma Mia 狎鸥亭粉红独栋烘焙咖啡",
+            nameKr: "맘마미아 도산",
+            nameEn: "Cafe Mamma Mia Apgujeong",
+            lat: 37.52565,
+            lng: 127.03425,
+            labelDir: "left",
+            address: "首尔江南区狎鸥亭路42街 45 (서울 강남구 압구정로42길 45)",
+            tags: [
+              "GFFG集团少女心代表作",
+              "艳粉红独栋+秘密花园",
+              "百种杯子蛋糕陈列"
+            ],
+            brandIntro: "同样隶属 GFFG 集团旗下的欧式花园烘焙咖啡品牌。",
+            storeDetail: "在寸土寸金的狎鸥亭巷内把一整栋双层小洋楼刷成极具辨识度的亮粉红色，前院种满绣球花与绿植，室内用古典水晶吊灯搭配数十款色彩绚丽的鲜果塔与奶油蛋糕。",
+            diffHighlight: "全韩唯一独栋门店，展示了同一餐饮集团如何用“Mamma Mia（极致甜美少女风）”与“Minute Papillon（复古法式风）”在同一街区切分不同审美客群。",
+            num: 6
+          },
+          {
+            id: "front-seoul-sinsa",
+            nameCn: "FRONT SEOUL 新沙林荫道五层全时段咖啡餐吧",
+            nameKr: "프론트서울",
+            nameEn: "FRONT SEOUL Garosu-gil",
+            lat: 37.51985,
+            lng: 127.02265,
+            labelDir: "bottom",
+            address: "首尔江南区 도산대로11길 29 (서울 강남구 도산대로11길 29)",
+            tags: [
+              "昔日潮牌大楼改造",
+              "复古奢华酒店大堂主题",
+              "早C晚A五层通透"
+            ],
+            brandIntro: "新沙洞林荫道后疫情时代复兴的代表性巨型咖啡与餐酒复合体，以“欢迎入住Grand Hotel”为空间叙事。",
+            storeDetail: "整栋五层加屋顶露台：1楼做成欧洲古董酒店前台（Check-in即点单），提供精品咖啡与巴斯克蛋糕；楼上各层融合远程办公长桌、砖炉披萨与夜间鸡尾酒吧。",
+            diffHighlight: "展示了林荫道早期退租的“整栋服装大楼”如何通过改造为“全天候咖啡+餐饮+社交俱乐部”重新盘活资产。",
+            num: 7
+          },
+          {
+            id: "milestone-sinsa",
+            nameCn: "Milestone Coffee 新沙洞1号创始总店",
+            nameKr: "마일스톤 커피 신사점",
+            nameEn: "Milestone Coffee Sinsa Main",
+            lat: 37.52065,
+            lng: 127.02095,
+            labelDir: "left",
+            address: "首尔江南区论岘路159街 49 (서울 강남구 논현로159길 49)",
+            tags: [
+              "品牌2014年创世首店",
+              "林荫道精品咖啡常青树",
+              "经典原木外摆"
+            ],
+            brandIntro: "首尔维也纳奶盖咖啡与精品手冲领域的标杆品牌 Milestone 的1号发源地。",
+            storeDetail: "位于新沙洞西侧静谧街巷，保留了十年如一日的温暖原木门头与专业手冲吧台，是周边广告公司与时尚从业者的日常据点。",
+            diffHighlight: "相比汉南洞店和圣水洞店，新沙店是品牌的根脉所在，出品最为稳健纯粹。",
+            num: 8
+          },
+          {
+            id: "saddler-haus-sinsa",
+            nameCn: "Saddler Haus 新沙洞可颂华夫饼(Croffle)鼻祖店",
+            nameKr: "새들러하우스",
+            nameEn: "Saddler Haus Sinsa",
+            lat: 37.51895,
+            lng: 127.02355,
+            labelDir: "right",
+            address: "首尔江南区 도산대로17길 10 B1 (서울 강남구 도산대로17길 10)",
+            tags: [
+              "全韩Croffle可颂华夫饼引爆者",
+              "艺人姜敏京带火",
+              "法式马具工坊主题"
+            ],
+            brandIntro: "把“可颂面团放进华夫饼机压烤（Croffle）”这一做法推向全韩乃至全亚洲烘焙标配的鼻祖级店铺。",
+            storeDetail: "位于新沙洞半地下空间，装修采用古典法式马具皮具店风格，现烤的原味、芝士与罗勒可颂华夫饼外皮焦糖酥脆、内里拉丝，常年需要排队取号。",
+            diffHighlight: "全球唯一总店（其余多为百货快闪），是研究“如何靠微创新工艺（可颂面团+华夫模具）创造一个全新烘焙品类”的必看起点。",
+            num: 9
+          }
+        ]
+      },
+      {
+        id: "supermarket",
+        name: "商超与策展型生活大店",
+        shortName: "商超/集合店",
+        color: "#2563eb",
+        badgeBg: "bg-blue-100 text-blue-900 border-blue-300",
+        isSpecial: false,
+        description: "江南的商超集合店将“新世代潮流便利店”、“财阀顶奢百货超市”与“无包装环保超市”推向了极致。",
+        stores: [
+          {
+            id: "nice-weather-market",
+            nameCn: "Nice Weather Market 新沙林荫道旗舰店",
+            nameKr: "나이스웨더 마켓",
+            nameEn: "Nice Weather Market Garosu-gil",
+            lat: 37.52095,
+            lng: 127.02215,
+            labelDir: "left",
+            address: "首尔江南区江南大路162街 35 1楼 (서울 강남구 강남대로162길 35)",
+            tags: [
+              "新世代潮流便利店鼻祖",
+              "日用品潮牌化",
+              "克莱因蓝手推车"
+            ],
+            brandIntro: "2020年诞生于新沙洞的“新一代文化便利店”品牌，提出“把买牙膏、袜子、速食面变成像买潮牌一样酷的消费行为”。",
+            storeDetail: "在林荫道首店爆红后升级扩建的巨型旗舰店（Market形态）。货架上同时售卖欧美小众零食、黑胶唱片、自有品牌卫衣、设计感洗护日用品及热门联名周边。",
+            diffHighlight: "现代百货店等分店多为商场内小型标准店，新沙洞这家 Market 旗舰店是品牌发源地与面积最大的全品类大本营。",
+            num: 10
+          },
+          {
+            id: "galleria-gourmet-494-apgujeong",
+            nameCn: "Galleria 格乐丽雅百货名品馆 & Gourmet 494 总店",
+            nameKr: "갤러리아백화점 명품관 고메이494",
+            nameEn: "Galleria Luxury Hall & Gourmet 494",
+            lat: 37.52835,
+            lng: 127.04015,
+            labelDir: "top",
+            address: "首尔江南区狎鸥亭路 343 West馆 B1 (서울 강남구 압구정로 343)",
+            tags: [
+              "韩国富人区第一贵妇超市",
+              "鱼鳞般发光玻璃幕墙",
+              "高定伴手礼天花板"
+            ],
+            brandIntro: "韩华集团旗下韩国最高端的顶奢百货，位于狎鸥亭罗德奥站核心，其B1层的 Gourmet 494 是全韩精品百货超市的教科书。",
+            storeDetail: "不仅汇集了全韩最顶级的1++级韩牛、天价麝香葡萄礼盒与自有品牌（Gourmet 494）初榨芝麻油，更首创了“顾客买完食材当场交由星级厨师加工堂食”的服务。",
+            diffHighlight: "这里是 Gourmet 494 的1号创世母本馆，想看韩国金字塔尖消费人群的日常民生选品与贵妇级包装设计，必看此店。",
+            num: 11
+          },
+          {
+            id: "shinsegae-gangnam-sweet-park",
+            nameCn: "新世界百货江南店 & Sweet Park (全韩销冠百货甜品超市)",
+            nameKr: "신세계백화점 강남점 스위트파크",
+            nameEn: "Shinsegae Gangnam & Sweet Park",
+            lat: 37.50425,
+            lng: 127.00315,
+            labelDir: "bottom",
+            address: "首尔瑞草区新盘浦路 176 B1 (서울 서초구 신반포로 176 지하1층)",
+            tags: [
+              "年销破3万亿韩元全球店王",
+              "2024全新揭幕5300㎡甜品乐园",
+              "40+全球烘焙首店集合"
+            ],
+            brandIntro: "新世界百货江南店是全韩国首家单店年销售额突破3万亿韩元（约160亿人民币）、稳居全球百货业单店前三的超级店王。",
+            storeDetail: "2024年其B1层重磅揭幕了占地5300㎡的“Sweet Park（甜品主题公园）”与升级版精品超市，一次性把日本Gariguette千层派、法国Pierre Marcolini及全韩40多家排队王烘焙名店塞进同一个地下层。",
+            diffHighlight: "全亚洲百货业B1层调改的巅峰之作！展示了顶级百货如何用“全球甜品首店收割机”策略维持日均十万级的高频进店客流。",
+            num: 12
+          },
+          {
+            id: "kurly-purple-box-gangnam",
+            nameCn: "星菲尔德 COEX 美食商超 & 现代百货贸易中心店食品馆",
+            nameKr: "현대백화점 무역센터점 식품관",
+            nameEn: "The Hyundai Trade Center Food Market",
+            lat: 37.50865,
+            lng: 127.05985,
+            labelDir: "right",
+            address: "首尔江南区德黑兰路 517 B1 (서울 강남구 테헤란로 517 지하1층)",
+            tags: [
+              "江南CBD白领熟食天堂",
+              "100+档口即时外带",
+              "高端红酒与威士忌墙"
+            ],
+            brandIntro: "现代百货集团位于江南三成洞金融与会展中心（COEX）的旗舰店。",
+            storeDetail: "专门针对江南德黑兰路高收入白领与商务客群，打造了全首尔密度最高的精致一人食便当（Deli）、沙拉碗与全球网红甜点外带矩阵。",
+            diffHighlight: "相比汝矣岛现代百货（偏重周末年轻潮流打卡），江南贸易中心店B1是观察“核心CBD商务区高效率、高客单工作日餐饮零售”的最佳切片。",
+            num: 13
+          }
+        ]
+      },
+      {
+        id: "cultural",
+        name: "品牌文创与感官设计",
+        shortName: "品牌文创",
+        color: "#9333ea",
+        badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
+        isSpecial: false,
+        description: "新沙洞林荫道与岛山公园是韩国现象级香氛、个护与多巴胺文创品牌开设“1号街边旗舰店”的摇篮。",
+        stores: [
+          {
+            id: "tamburins-sinsa",
+            nameCn: "Tamburins 新沙洞1号旗舰店",
+            nameKr: "탬버린즈 신사 플래그십스토어",
+            nameEn: "Tamburins Sinsa Flagship",
+            lat: 37.52045,
+            lng: 127.02325,
+            labelDir: "right",
+            address: "首尔江南区狎鸥亭路10街 44 (서울 강남구 압구정로10길 44)",
+            tags: [
+              "品牌开山1号总店(2017)",
+              "白马动态雕塑装置",
+              "纯白几何独栋"
+            ],
+            brandIntro: "IICOMBINED 集团旗下艺术香氛品牌，以“不定义美的形式”为核心视觉哲学。",
+            storeDetail: "位于新沙洞林荫道支巷的白色独栋建筑，也是2017年 Tamburins 品牌诞生时的全球首家门店。一进门即可看到1:1高仿真呼吸白马动态艺术装置。",
+            diffHighlight: "圣水店走的是地下混凝土废墟风，而新沙洞这家是品牌的1号母本店，空间动线最纯粹。",
+            num: 14
+          },
+          {
+            id: "wiggle-wiggle-dosan",
+            nameCn: "Wiggle Wiggle Zip 岛山洋房旗舰店",
+            nameKr: "위글위글 집 도산",
+            nameEn: "Wiggle Wiggle Zip Dosan",
+            lat: 37.52585,
+            lng: 127.03615,
+            labelDir: "left",
+            address: "首尔江南区彦州路168街 31 (서울 강남구 언주로168길 31)",
+            tags: [
+              "品牌首家独栋主题屋",
+              "伦敦贝果正隔壁",
+              "全屋高饱和撞色改造"
+            ],
+            brandIntro: "韩国多巴胺色彩文创代表品牌 Wiggle Wiggle 开设的全球第一家线下独栋体验馆。",
+            storeDetail: "紧挨着伦敦贝果博物馆岛山店！将一栋四层复古绿砖住宅改造成怪诞的色彩之家：从花园、客厅、浴室到上下颠倒的卧室，每个角落都塞满彩色花朵与小熊周边。",
+            diffHighlight: "岛山店是品牌验证“把线下门店做成免费多巴胺拍照游乐园、用伦敦贝果排队客流直接转化文创购买”的1号成功母本。",
+            num: 15
+          },
+          {
+            id: "granhand-sinsa",
+            nameCn: "GRANHAND 新沙林荫道手工香氛店",
+            nameKr: "그랑핸드 신사",
+            nameEn: "GRANHAND Sinsa",
+            lat: 37.51945,
+            lng: 127.02155,
+            labelDir: "left",
+            address: "首尔江南区江南大路162街 27-2 (서울 강남구 강남대로162길 27-2)",
+            tags: [
+              "复古打字机免费印名",
+              "麻布标牌喷雾",
+              "超高复购平价沙龙香"
+            ],
+            brandIntro: "创立于北村韩屋村的韩国本土独立手工香氛品牌，凭借极高的性价比（3.5万~4.5万韩元大瓶多用途香氛）与店员当场用复古印章在亚麻布标签上敲印顾客姓名的仪式感，积累了极高忠诚度。",
+            storeDetail: "位于林荫道西侧支巷的下沉式暖木色调空间，按花香、木质、果香陈列二十余款经典香型及护手霜、线香。",
+            diffHighlight: "相比北村1号店（窄小韩屋），新沙店空间更宽敞现代，是考察“如何用低成本手工盖章定制服务将转化率提升至60%以上”的实战样本。",
+            num: 16
+          },
+          {
+            id: "nonfiction-sinsa",
+            nameCn: "Nonfiction 新沙林荫道旗舰店",
+            nameKr: "논픽션 신사",
+            nameEn: "Nonfiction Sinsa Flagship",
+            lat: 37.52025,
+            lng: 127.02285,
+            labelDir: "right",
+            address: "首尔江南区狎鸥亭路10街 30-11 (서울 강남구 압구정로10길 30-11)",
+            tags: [
+              "复古绿砖拱窗建筑",
+              "全系列礼盒定制",
+              "沉浸式试香动线"
+            ],
+            brandIntro: "韩国极简沙龙香氛代表品牌 Nonfiction 在江南布局的核心据点。",
+            storeDetail: "改造自新沙洞一栋带有优美圆拱窗的复古砖楼，室内延续品牌标志性的胡桃木书房美学，提供专属丝带礼盒包装服务。",
+            diffHighlight: "与相距仅100米的 Tamburins 新沙店形成正面交锋，同行可以同场对比韩国两大顶流香氛截然不同的陈列与导购话术。",
+            num: 17
+          },
+          {
+            id: "simihaze-beauty-dosan",
+            nameCn: "hince / 岛山公园设计师美妆文创廊 (힌스/뷰티쇼룸)",
+            nameKr: "힌스 도산플래그십스토어",
+            nameEn: "hince Dosan Flagship",
+            lat: 37.52365,
+            lng: 127.03685,
+            labelDir: "bottom",
+            address: "首尔江南区彦州路164街 35 (서울 강남구 언주로164길 35)",
+            tags: [
+              "情绪叙事彩妆鼻祖",
+              "丝带莫兰迪色包装",
+              "高定试妆吧台"
+            ],
+            brandIntro: "以“Mood-Narrative（情绪叙事）”定位切入市场的韩国设计师彩妆品牌，凭借极具雕塑感的扭曲瓶身与莫兰迪低饱和色调风靡日本与韩国。",
+            storeDetail: "位于岛山公园南侧的暖调洞穴感艺术空间，将口红与高光膏像珠宝一样陈列在弧形石材台面上。",
+            diffHighlight: "相比圣水店，岛山旗舰店更加突出私人沙龙式的1对1试妆与礼品包装体验。",
+            num: 18
+          }
+        ]
+      },
+      {
+        id: "fashion",
+        name: "潮流服饰与奢华买手旗舰",
+        shortName: "潮流/买手",
+        color: "#e11d48",
+        badgeBg: "bg-rose-100 text-rose-900 border-rose-300",
+        isSpecial: false,
+        description: "岛山公园与清潭洞聚集了全球街头霸主（Supreme、Stüssy）的韩国唯一总店及各大财团旗下的顶级买手百货。",
+        stores: [
+          {
+            id: "beaker-cheongdam",
+            nameCn: "BEAKER 清潭旗舰店",
+            nameKr: "비이커 청담플래그십스토어",
+            nameEn: "BEAKER Cheongdam Flagship",
+            lat: 37.52595,
+            lng: 127.04325,
+            labelDir: "right",
+            address: "首尔江南区狎鸥亭路 408 (서울 강남구 압구정로 408)",
+            tags: [
+              "三星物产旗下买手店",
+              "可持续再生道具",
+              "时尚+书籍+咖啡复合"
+            ],
+            brandIntro: "由三星物产时装部门（Samsung C&T）运营的韩国代表性当代生活方式与多品牌买手集合店（Multi-brand Store）。",
+            storeDetail: "位于清潭洞名品街主干道的独栋空间，店内大量使用回收纸张与环保再生材质制作陈列台，一楼涵盖生活杂货、香氛与联名快闪，二楼为男女装买手精选。",
+            diffHighlight: "相比汉南店与圣水店，清潭旗舰店选品客单价最高，是观察韩国大财团如何操盘高端生活方式买手店的标准样本。",
+            num: 19
+          },
+          {
+            id: "supreme-seoul-dosan",
+            nameCn: "Supreme Seoul 岛山公园韩国唯一官方总店",
+            nameKr: "슈프림 서울",
+            nameEn: "Supreme Seoul Flagship Dosan",
+            lat: 37.52455,
+            lng: 127.03695,
+            labelDir: "right",
+            address: "首尔江南区宣陵路153街 37 (서울 강남구 선릉로153길 37)",
+            tags: [
+              "全球第16家官方门店(2023)",
+              "韩国唯一正版直营",
+              "每周发售排队奇观"
+            ],
+            brandIntro: "纽约传奇滑板街头霸主 Supreme 在苦等多年后，于2023年8月正式在首尔岛山公园旁开出的韩国首家且唯一官方直营店。",
+            storeDetail: "紧邻岛山公园东侧的极简工业独栋，店内悬挂美国艺术家 Nate Lowman 创作的巨幅弹孔画作与悬挂式滑板雕塑，保留大面积无障碍滑板空间。",
+            diffHighlight: "全韩唯一门店！它的落户直接将岛山公园宣陵路153街推上了“韩国街头潮流第一街”的宝座。",
+            num: 20
+          },
+          {
+            id: "stussy-seoul-chapter",
+            nameCn: "Stüssy Seoul Chapter 狎鸥亭旗舰店",
+            nameKr: "스투시 서울챕터",
+            nameEn: "Stussy Seoul Chapter Dosan",
+            lat: 37.52595,
+            lng: 127.03545,
+            labelDir: "left",
+            address: "首尔江南区狎鸥亭路46街 45 (서울 강남구 압구정로46길 45)",
+            tags: [
+              "Seoul字样限定卫衣一衣难求",
+              "Haus Dosan斜对面",
+              "Willoughby设计空间"
+            ],
+            brandIntro: "加州元老级街头冲浪与滑板潮牌 Stüssy 在首尔设立的官方 Chapter 专门店。",
+            storeDetail: "就在 Haus Dosan 斜对面！极简原木与灰泥空间，门口从早到晚排满为了抢购“Stüssy Seoul 城市限定印字T恤与连帽衫”的全球潮人。",
+            diffHighlight: "展示了国际潮牌如何靠“单店专属城市印字限定款（City Exclusive）”让一家普通面积门店产生全天候排队效应。",
+            num: 21
+          },
+          {
+            id: "10-corsocomo-cheongdam",
+            nameCn: "10 Corso Como 清潭三层买手殿堂",
+            nameKr: "10 꼬르소 꼬모 서울 청담점",
+            nameEn: "10 Corso Como Seoul Cheongdam",
+            lat: 37.52665,
+            lng: 127.04215,
+            labelDir: "top",
+            address: "首尔江南区狎鸥亭路 416 (서울 강남구 압구정로 416)",
+            tags: [
+              "亚洲慢购物概念先驱(2008)",
+              "时装+设计书店+米其林餐厅",
+              "Kris Ruhs圆圈视觉"
+            ],
+            brandIntro: "源于意大利米兰、由三星物产引进运营的殿堂级传奇买手店，早在2008年就将“时尚、设计、书籍与美食融合的慢购物（Slow Shopping）”概念带入韩国。",
+            storeDetail: "三层独栋配露天花园餐厅：1楼为香氛、设计器物与花园咖啡餐厅，2楼为全球顶奢先锋时装，3楼为设计画册书店与画廊。",
+            diffHighlight: "相比明洞乐天百货分店，清潭洞三层独栋总店是韩国所有现代复合买手店（Lifestyle Concept Store）的开山老祖。",
+            num: 22
+          },
+          {
+            id: "rare-market-cheongdam",
+            nameCn: "RARE MARKET 清潭 (权志龙姐姐主理买手店)",
+            nameKr: "레어마켓",
+            nameEn: "RARE MARKET Cheongdam",
+            lat: 37.52525,
+            lng: 127.04455,
+            labelDir: "bottom",
+            address: "首尔江南区狎鸥亭路80街 24 (서울 강남구 압구정로80길 24)",
+            tags: [
+              "GD姐姐权达美创立",
+              "We11done品牌发源地",
+              "好莱坞与韩流明星衣橱"
+            ],
+            brandIntro: "由权志龙（G-Dragon）亲姐姐权达美与郑惠珍于2014年创立的先锋买手店，并由此孵化出走向巴黎时装周的国际潮牌 WE11DONE。",
+            storeDetail: "位于清潭洞静谧街区的重工业金属风格独栋，精选全球极具戏剧张力的先锋设计师品牌及 WE11DONE 全系单品。",
+            diffHighlight: "这里是观察“韩国顶级买手店如何依靠主理人审美与明星资源，反向孵化出年销近千亿韩元自有品牌（WE11DONE）”的传奇现场。",
+            num: 23
+          },
+          {
+            id: "gentle-monster-sinsa",
+            nameCn: "Gentle Monster 新沙林荫道旗舰店",
+            nameKr: "젠틀몬스터 신사 플래그십스토어",
+            nameEn: "Gentle Monster Sinsa Flagship",
+            lat: 37.52055,
+            lng: 127.02245,
+            labelDir: "top",
+            address: "首尔江南区狎鸥亭路10街 23 (서울 강남구 압구정로10길 23)",
+            tags: [
+              "林荫道空间叙事代表作",
+              "多层科幻剧场",
+              "与Tamburins新沙店比邻"
+            ],
+            brandIntro: "全球现象级艺术眼镜品牌 Gentle Monster 在新沙洞林荫道打造的核心独栋旗舰店。",
+            storeDetail: "整栋建筑每层设定不同主题的机械动态雕塑与声音装置，眼镜陈列退居二线，让顾客像逛当代艺术双年展一样自然试戴。",
+            diffHighlight: "与100米外的 Tamburins 新沙1号店、Nudake 新沙可颂店共同构成了新沙洞“IICOMBINED 铁三角巡店路线”。",
+            num: 24
+          }
+        ]
+      },
+      {
+        id: "special",
+        name: "商圈独有特色：集团级跨业态实验大楼与品牌文化馆",
+        shortName: "特色：跨业态实验楼",
+        color: "#d97706",
+        badgeBg: "bg-amber-100 text-amber-900 border-amber-300",
+        isSpecial: true,
+        description: "江南岛山公园片区最独特的商业贡献，在于开创了“同一集团旗下三大不同业态品牌共处一栋五层建筑互相导流”的垂直实验楼，以及现代集团用整栋楼讲烹饪与旅行故事的品牌文化馆。",
+        stores: [
+          {
+            id: "haus-dosan",
+            nameCn: "HAUS NOWHERE DOSAN (Gentle Monster 五层复合总部店)",
+            nameKr: "하우스 도산",
+            nameEn: "HAUS NOWHERE DOSAN",
+            lat: 37.52538,
+            lng: 127.03568,
+            labelDir: "right",
+            address: "首尔江南区狎鸥亭路46街 50 (서울 강남구 압구정로46길 50)",
+            tags: [
+              "眼镜+香氛+甜点三合一",
+              "六足机器人装置",
+              "无货架未来零售"
+            ],
+            brandIntro: "由 IICOMBINED 集团打造的线下零售新物种品牌，集合了集团旗下 Gentle Monster（眼镜）、Tamburins（香氛）与 Nudake（甜点）三大王牌。",
+            storeDetail: "地上4层+地下1层的粗野主义混凝土建筑：1楼为大型艺术展厅，2~3楼为 Gentle Monster 墨镜与巨型仿真机械装置，4楼为 Tamburins 香氛空间，B1层为 Nudake 艺术甜点。",
+            diffHighlight: "集团在首尔唯一能够一次性完整考察“用B1高频餐饮（Nudake）拉动整栋楼客流，再向上层高毛利眼镜与香氛（2~4F）转化”的完整闭环模型。",
+            num: 25
+          },
+          {
+            id: "hyundai-card-cooking-library",
+            nameCn: "Hyundai Card Cooking Library (现代卡烹饪图书馆)",
+            nameKr: "현대카드 쿠킹라이브러리",
+            nameEn: "Hyundai Card Cooking Library Dosan",
+            lat: 37.52485,
+            lng: 127.03625,
+            labelDir: "left",
+            address: "首尔江南区狎鸥亭路46街 46 (서울 강남구 압구정로46길 46)",
+            tags: [
+              "Haus Dosan正隔壁",
+              "1万册全球食谱+真厨房实操",
+              "顶层温室私宴"
+            ],
+            brandIntro: "现代信用卡在江南岛山公园打造的“味觉与烹饪主题”体验大楼。",
+            storeDetail: "共4层：1楼为熟食烘焙咖啡厅（Deli），2楼收藏超1万册全球美食与烹饪原版书及300多种世界香料嗅觉标本，3楼更是配备了顶级厨具的开放式DIY厨房——读者看中书里的哪道菜，可直接买齐食材包上3楼亲手做出来吃！",
+            diffHighlight: "把“静态看书”直接打通为“闻香料 + 买食材包 + 进厨房下厨 + 温室用餐”的五感闭环，是全球实体书店与品牌体验馆跨界设计的巅峰之作。",
+            num: 26
+          },
+          {
+            id: "sulwhasoo-flagship-dosan",
+            nameCn: "雪花秀 岛山公园五层灯笼旗舰店 (Sulwhasoo Flagship)",
+            nameKr: "설화수 플래그십스토어 도산",
+            nameEn: "Sulwhasoo Flagship Store Dosan Park",
+            lat: 37.52225,
+            lng: 127.03455,
+            labelDir: "bottom",
+            address: "首尔江南区岛山大路45街 18 (서울 강남구 도산대로45길 18)",
+            tags: [
+              "如恩设计(Neri&Hu)操刀",
+              "黄铜立体网格灯笼建筑",
+              "顶奢韩方SPA+茶室"
+            ],
+            brandIntro: "爱茉莉太平洋集团旗下殿堂级韩方高奢护肤品牌雪花秀的全球最大独立品牌殿堂。",
+            storeDetail: "由国际知名建筑事务所如恩设计（Neri&Hu）以“照亮亚洲之美的金色黄铜灯笼”为概念改造整栋五层大楼：地下为顶奢人参SPA水疗中心，1~2楼为历史遗产展厅与定制丝巾包装区（Jihambo），顶层为俯瞰岛山公园的传统茶点露台。",
+            diffHighlight: "与北村韩屋旗舰店（传统木构韩屋）形成鲜明对比，岛山店用现代黄铜几何线条诠释东方美学，是考察本土美妆品牌如何立住“国际顶奢大牌身价”的必看建筑。",
+            num: 27
+          }
+        ]
+      }
+    ]
+  },
+  "ikseon": {
+    id: "ikseon",
+    name: "益善洞",
+    enName: "IKSEON-DONG",
+    status: "24家核心旺店",
+    center: [
+      37.5742,
+      126.9896
+    ],
+    zoom: 16,
+    kakaoLevel: 4,
+    headline: "益善洞（联动钟路三街/安国韩屋带）：百年韩屋群的“一店一世界”高密改造",
+    retailOverview: "益善洞及紧邻的安国/苑西韩屋片区展示了全球最极致的“传统历史民居微更新逻辑”：在宽度不足2米的迷宫式百年韩屋小巷里，主理人们利用韩屋原有的天井（中庭）加上透明玻璃顶棚，在30~100㎡的局促面积内造出竹林、盐田、火车铁轨、欧式药房与牧场。特别说明：由于韩屋保护区限制大型现代建筑，本区无传统综合大商超，商业精华高度集中在「强主题韩屋咖啡烘焙」、「东方香氛文创」与「韩屋工坊复合体」。",
+    timeline: [
+      {
+        period: "1920年代 · 首尔最早平民改良韩屋村",
+        desc: "由近代民族房产开发商郑世权先生（建阳社）规划建设，打破传统两班贵族大宅格局，建造了百余栋小户型都市改良韩屋，供普通市民居住。"
+      },
+      {
+        period: "2004–2014 · 拆迁拉锯与时间冻结",
+        desc: "曾被划入高层商业公寓重建区，因居民补偿与历史风貌保护争议搁置十年，反而幸运地让这片百年棋盘式窄巷免遭推土机破坏。"
+      },
+      {
+        period: "2016至今 · Glow Seoul等空间团队引爆韩屋造景革命",
+        desc: "以 Glow Seoul 为代表的年轻空间设计团队批量租下破败韩屋，保留木梁与青瓦，在院落内造竹林、挖盐田、搭铁轨，将益善洞与周边韩屋带变成全首尔拍照转化率与坪效最高的主题烘焙咖啡聚落。"
+      }
+    ],
+    categories: [
+      {
+        id: "coffee",
+        name: "咖啡与烘焙旺店（商圈绝对核心支柱）",
+        shortName: "咖啡/烘焙",
+        color: "#059669",
+        badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+        isSpecial: false,
+        description: "益善洞与钟路韩屋带是韩国“重度剧本杀式主题咖啡馆”的发源地——每一家爆店都有一个极其明确的视觉母题（竹林溪流、盐田、火车轨道、竹笼蒸吐司、韩屋大院）。",
+        stores: [
+          {
+            id: "cheongsudang",
+            nameCn: "清水堂 (Cheongsudang) 益善总店",
+            nameKr: "청수당",
+            nameEn: "Cheongsudang Ikseon",
+            lat: 37.57388,
+            lng: 126.99052,
+            labelDir: "right",
+            address: "首尔钟路区敦化门路11那街 31-9 (서울 종로구 돈화문로11나길 31-9)",
+            tags: [
+              "东方竹林庭院造景",
+              "水上石板桥入口",
+              "石锅舒芙蕾/方形抹茶"
+            ],
+            brandIntro: "Glow Seoul 集团旗下最具代表性的东方美学咖啡品牌，开创了“未进店门先过水桥”的沉浸式入口设计范式。",
+            storeDetail: "在逼仄的韩屋小巷旁突然辟出一片幽静竹林、巨石流水与暖黄纸灯笼，顾客必须踏着水面石板过桥才能进店。室内主打装在方形陶盒中的抹茶提拉米苏与现烤石锅舒芙蕾。",
+            diffHighlight: "清水堂后续在新沙洞（Spa水疗主题）、延南洞（欧式花园主题）开出分店，但益善洞总店是其成名起家店，“窄巷尽头忽见竹林溪流”的戏剧反差感最强。",
+            num: 1
+          },
+          {
+            id: "soha-salt-pond",
+            nameCn: "小夏盐田 (Soha Salt Pond) 盐面包专门店",
+            nameKr: "소하염전",
+            nameEn: "Soha Salt Pond",
+            lat: 37.57342,
+            lng: 126.99028,
+            labelDir: "bottom",
+            address: "首尔钟路区水标路28街 21-5 (서울 종로구 수표로28길 21-5)",
+            tags: [
+              "韩屋中庭真造一座盐田",
+              "盐可颂单品风暴",
+              "大水车与结晶盐造景"
+            ],
+            brandIntro: "精准捕捉韩国“盐面包（Shio Pan / 소금빵）”消费热潮的现象级烘焙咖啡品牌，将产品核心原料“海盐”直接放大为整个建筑空间的视觉主题。",
+            storeDetail: "把韩屋中央原本不大的露天院落，铺满纯白海盐结晶、黑色水池与一座缓缓转动的木制水车，店内围绕“盐”开发了松露盐面包、玉米奶油盐面包及咸奶油拿铁。",
+            diffHighlight: "这是“单品故事空间化”的极致案例——卖盐面包，就直接在中庭造一片微缩盐田，让每一位客人无需任何文字解释就立刻记住品牌核心卖点。",
+            num: 2
+          },
+          {
+            id: "mil-toast",
+            nameCn: "Mil Toast (밀토스트) 益善总店",
+            nameKr: "밀토스트",
+            nameEn: "Mil Toast House",
+            lat: 37.57322,
+            lng: 126.98968,
+            labelDir: "left",
+            address: "首尔钟路区水标路28街 30-3 (서울 종로구 수표로28길 30-3)",
+            tags: [
+              "竹笼蒸吐司单品王",
+              "全U型明档吧台",
+              "早8点即排队"
+            ],
+            brandIntro: "专注“笼屉现蒸布里欧修吐司”与手冲滴滤咖啡的烘焙专门店，将东方传统竹蒸笼工艺与西式黄油吐司结合，开创了蒸吐司细分赛道。",
+            storeDetail: "保留了老韩屋高耸的木结构屋架并引入天窗自然光，门头采用蓝白亚麻布帘。一进门即是U型环绕式开放吧台，店员在热气腾腾的竹蒸笼前现蒸栗子吐司、玉米吐司。",
+            diffHighlight: "作为品牌在韩国唯一的核心总店，其U型吧台将“蒸笼冒白气”的视觉与麦香直接推到街边橱窗，路人截流率极高。",
+            num: 3
+          },
+          {
+            id: "nakwon-station",
+            nameCn: "乐园驿 (Nakwon Station) 铁道主题咖啡",
+            nameKr: "낙원역",
+            nameEn: "Nakwon Station Cafe",
+            lat: 37.57305,
+            lng: 126.98995,
+            labelDir: "right",
+            address: "首尔钟路区水标路28街 33-5 (서울 종로구 수표로28길 33-5)",
+            tags: [
+              "韩屋庭院铺设真铁轨",
+              "回转传送带展示甜点",
+              "石炭咖啡特调"
+            ],
+            brandIntro: "以“近代闲置老火车站”为叙事灵感的主题咖啡与甜点品牌，与清水堂同属益善洞现象级造景军团。",
+            storeDetail: "在韩屋天井院落中央直接铺设了一段枕木火车铁轨与碎石路；室内吧台更是引入了圆形机械传送带，精致的法式水果塔在轨道上缓缓移动供客人观赏点单。",
+            diffHighlight: "益善洞唯一一家将“工业铁道、动态机械传送带与百年韩屋木构”三者碰撞融合的空间，展示了小面积店铺如何通过动态机械装置提升客单价。",
+            num: 4
+          },
+          {
+            id: "seoul-coffee-ikseon",
+            nameCn: "Seoul Coffee (首尔咖啡) 益善1号总店",
+            nameKr: "서울커피 익선점",
+            nameEn: "Seoul Coffee Ikseon Main",
+            lat: 37.57295,
+            lng: 126.98955,
+            labelDir: "left",
+            address: "首尔钟路区水标路28街 33-3 (서울 종로구 수표로28길 33-3)",
+            tags: [
+              "益善洞第一代爆款鼻祖",
+              "夹大块黄油的红豆面包",
+              "立方体冰砖拿铁"
+            ],
+            brandIntro: "以“重现1980年代老首尔记忆”为理念的韩式复古精品咖啡品牌，正是这家店在2017年的爆红彻底拉开了益善洞韩屋咖啡街的序幕。",
+            storeDetail: "门头悬挂极具年代感的复古铜字招牌，店内首创了将厚切冷黄油与甜红豆沙一起夹入墨鱼小吐司的“安黄油面包（Ang-Butter Bread）”及方块冰砖牛奶咖啡。",
+            diffHighlight: "虽然品牌随后进驻了望远洞与各大商场，但益善洞1号店是全韩“红豆夹黄油烘焙（Ang-Butter）”风潮的真正发源地。",
+            num: 5
+          },
+          {
+            id: "dongbaek-bakery",
+            nameCn: "冬柏洋果店 (Dongbaek) 益善复古舒芙蕾店",
+            nameKr: "동백양과점 익선",
+            nameEn: "Dongbaek Bakery Ikseon",
+            lat: 37.57335,
+            lng: 126.98982,
+            labelDir: "top",
+            address: "首尔钟路区水标路28街 17-24 (서울 종로구 수표로28길 17-24)",
+            tags: [
+              "1930年代京城摩登茶房风",
+              "厚达10厘米草莓舒芙蕾",
+              "虹吸壶手冲表演"
+            ],
+            brandIntro: "主打“开化期（20世纪初近代中西交融期）贵族洋果子店”概念的甜品咖啡品牌。",
+            storeDetail: "店员身着复古马甲与贝雷帽，吧台一字排开古典虹吸壶（Syphon）煮制咖啡；每桌必点的现烤双层草莓舒芙蕾松饼耗时20分钟烘烤，端上桌时带有极致晃动感。",
+            diffHighlight: "单价虽高（一份舒芙蕾逾2.3万韩元），但通过“虹吸壶视觉表演 + 现烤舒芙蕾高溢价正餐化”，实现了极高的单桌产出。",
+            num: 6
+          },
+          {
+            id: "cafe-highwaist-ikseon",
+            nameCn: "Cafe Highwaist 益善店 (动物奶油蛋糕专门店)",
+            nameKr: "카페 하이웨스트 익선점",
+            nameEn: "Cafe Highwaist Ikseon",
+            lat: 37.57378,
+            lng: 126.99018,
+            labelDir: "top",
+            address: "首尔钟路区敦化门路11那街 18 (서울 종로구 돈화문로11나길 18)",
+            tags: [
+              "Cafe Layered同门姐妹牌",
+              "复古小狗/小熊奶油蛋糕",
+              "韩屋套欧式复古软装"
+            ],
+            brandIntro: "由伦敦贝果博物馆、Cafe Layered 同一主理人团队在益善洞打造的英伦复古烘焙馆。",
+            storeDetail: "从外面看是青瓦韩屋，推门进去却100%变成了欧洲乡村烘焙屋！中央木桌堆满手绘卡通小狗造型奶油蛋糕、红丝绒蛋糕与多款司康。",
+            diffHighlight: "相比延南洞首店，益善洞店完美示范了“如何完全不改韩屋外壳，仅靠高密度欧式古董家具与托盘陈列在内部实现空间穿越”。",
+            num: 7
+          },
+          {
+            id: "rami-scone-ikseon",
+            nameCn: "Rami Scone (라미스콘) 益善无麸质烘焙韩屋",
+            nameKr: "라미스콘 익선",
+            nameEn: "Rami Scone Ikseon",
+            lat: 37.57282,
+            lng: 126.99038,
+            labelDir: "bottom",
+            address: "首尔钟路区水标路28街 25 (서울 종로구 수표로28길 25)",
+            tags: [
+              "全米粉无麸质健康烘焙",
+              "焦糖布丁司康",
+              "阳光韩屋中庭"
+            ],
+            brandIntro: "专注于100%韩国大米米粉（Gluten-Free 无小麦面粉）制作低卡司康与奶油泡芙的健康烘焙品牌。",
+            storeDetail: "明亮通透的韩屋小院，针对既想吃高颜值甜品又怕胖的韩国年轻女性，推出低糖伯爵茶米司康、烤布蕾泡芙与燕麦奶拿铁。",
+            diffHighlight: "在满街重油重糖烘焙的益善洞，精准切中“健康无麸质（Vegan & Gluten-free）”细分蓝海。",
+            num: 8
+          },
+          {
+            id: "tle-an-ikseon",
+            nameCn: "뜰안 (Tteuran) 益善洞传统韩茶与韩果老铺",
+            nameKr: "뜰안",
+            nameEn: "Tteuran Traditional Tea House",
+            lat: 37.57358,
+            lng: 126.99005,
+            labelDir: "left",
+            address: "首尔钟路区水标路28街 17-35 (서울 종로구 수표로28길 17-35)",
+            tags: [
+              "益善洞原生态韩屋茶室",
+              "五味子茶配烤年糕",
+              "中庭野生花草园"
+            ],
+            brandIntro: "在益善洞商业化狂潮中坚守纯正韩国传统茶道（艾草茶、五味子茶、双和茶）与手工韩果的口碑名店。",
+            storeDetail: "完全保留传统韩屋的温突（地暖坐垫）房间与种满柿子树、睡莲缸的露天小院，出品现烤蘸蜜条糕、红豆刨冰与养生草本茶。",
+            diffHighlight: "无分店，是对比“新派网红韩屋咖啡”与“正统古典韩屋茶室”空间尺度与客群结构差异的绝佳坐标。",
+            num: 9
+          },
+          {
+            id: "cafe-onion-anguk",
+            nameCn: "Cafe Onion 安国韩屋旗舰店 (益善/安国步行圈)",
+            nameKr: "어니언 안국",
+            nameEn: "Cafe Onion Anguk Hanok",
+            lat: 37.57775,
+            lng: 126.98635,
+            labelDir: "left",
+            address: "首尔钟路区桂洞街 5 (서울 종로구 계동길 5)",
+            tags: [
+              "全韩最著名韩屋改造咖啡馆",
+              "脱鞋席地而坐缘侧长廊",
+              "早7点排队盛况"
+            ],
+            brandIntro: "Fabrikr 团队继圣水洞工业废墟店大获成功后，于2019年斥巨资将安国站旁一座百余年历史的传统大型韩屋大院改造成的3号旗舰店。",
+            storeDetail: "保留了四合院式的传统木构韩屋大院与中央白沙松树庭院，抽掉外墙改用无框落地玻璃，顾客既可在西式长桌就座，也可脱鞋坐在传统韩屋木地板长廊（Maru）上品尝雪山包与手冲。",
+            diffHighlight: "与圣水1号店（重工业水泥废墟风）形成极致反差！安国店是全球商业设计界公认的“传统古建筑现代化商业改造”天花板级作品。",
+            num: 10
+          },
+          {
+            id: "london-bagel-anguk",
+            nameCn: "伦敦贝果博物馆 安国1号创世总店",
+            nameKr: "런던베이글뮤지엄 안국점",
+            nameEn: "London Bagel Museum Anguk Main",
+            lat: 37.57915,
+            lng: 126.98615,
+            labelDir: "top",
+            address: "首尔钟路区北村路4街 20 (서울 종로구 북촌로4길 20)",
+            tags: [
+              "2021年品牌创世1号首店",
+              "单日取号破千桌",
+              "韩屋街里的伦敦老砖房"
+            ],
+            brandIntro: "掀起全韩贝果狂潮的 London Bagel Museum 1号发源总店。",
+            storeDetail: "在传统韩屋聚集的钟路安国片区，故意把一栋平房改造成19世纪伦敦街头满是岁月痕迹的红砖面包作坊，柴火木堆与敞开式烤炉正对排队人群。",
+            diffHighlight: "相比岛山双层大店，安国1号店面积紧凑、排队密度最高，是实地考察其“CatchTable电子排队系统如何高效调度门外数百名等候客流”的第一现场。",
+            num: 11
+          },
+          {
+            id: "artist-bakery-anguk",
+            nameCn: "Artist Bakery 安国盐可颂专门店 (2024新排队王)",
+            nameKr: "아티스트베이커리 안국",
+            nameEn: "Artist Bakery Anguk",
+            lat: 37.57615,
+            lng: 126.98425,
+            labelDir: "left",
+            address: "首尔钟路区栗谷路 45 1楼 (서울 종로구 율곡로 45)",
+            tags: [
+              "伦敦贝果团队最新力作",
+              "把盐面包做出20种夹心形态",
+              "纯白画室主题"
+            ],
+            brandIntro: "伦敦贝果博物馆原班创始团队于2023年底至2024年重磅推出的最新烘焙品牌——将原本单一的盐面包（Salt Bread）裂变出多达20余种咸甜创意形态与法式浓汤搭配。",
+            storeDetail: "位于安国站1号出口正门口的纯白街角空间，店内堆满柠檬糖霜盐面包、土豆芝士盐面包、大葱乳酪夹心盐面包及巨型法棍三明治。",
+            diffHighlight: "全国唯一门店！完整复刻了伦敦贝果的“高密度丰盛陈列 + IP贴纸马克杯周边 + 门口长队景观”三大爆款公式，是观察该团队如何连续制造现象级品牌的最新样本。",
+            num: 12
+          },
+          {
+            id: "fritz-coffee-wonseo",
+            nameCn: "Fritz Coffee 苑西店 (昌德宫旁博物馆庭院店)",
+            nameKr: "프릳츠 원서점",
+            nameEn: "Fritz Coffee Company Wonseo",
+            lat: 37.57825,
+            lng: 126.98885,
+            labelDir: "right",
+            address: "首尔钟路区栗谷路 83 阿拉里奥博物馆院内 (서울 종로구 율곡로 83)",
+            tags: [
+              "建筑大师金寿根玻璃馆旁",
+              "韩屋瓦顶+石阶庭院",
+              "宫墙根下的海豹咖啡"
+            ],
+            brandIntro: "精品咖啡标杆 Fritz Coffee 的2号名店，选址于世界文化遗产昌德宫旁、由韩国现代建筑泰斗金寿根设计的“空间社（现阿拉里奥美术馆）”院落内。",
+            storeDetail: "一侧是长满常春藤的现代主义黑砖美术馆，另一侧是改造后的传统韩屋咖啡吧台，顾客坐在露天石阶与青瓦屋檐下喝手冲、吃现烤牛角包。",
+            diffHighlight: "相比麻浦桃花1号店（市井小巷风），苑西店与顶级私人当代美术馆共生，空间文化底蕴冠绝全韩。",
+            num: 13
+          }
+        ]
+      },
+      {
+        id: "cultural",
+        name: "品牌文创与韩屋香氛工坊",
+        shortName: "品牌文创",
+        color: "#9333ea",
+        badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
+        isSpecial: false,
+        description: "益善洞与钟路韩屋带的文创品牌紧密围绕“东方木质调香氛、非遗手作器物与复古伴手礼”展开，展现出极强的在地文化溢价能力。",
+        stores: [
+          {
+            id: "assibang-agan",
+            nameCn: "Assibang Agan (아씨방앗간) 韩屋香氛工坊",
+            nameKr: "아씨방앗간",
+            nameEn: "Assibang Agan Fragrance",
+            lat: 37.57372,
+            lng: 126.98982,
+            labelDir: "top",
+            address: "首尔钟路区敦化门路11那街 28-4 (서울 종로구 돈화문로11나길 28-4)",
+            tags: [
+              "传统磨坊改香氛工坊",
+              "定制生辰香包",
+              "高转化旅游伴手礼"
+            ],
+            brandIntro: "扎根益善洞的本土手工香氛与文创杂货品牌，店名意为“小姐的磨坊”，将传统韩屋改造为研磨香草与精油的造香空间。",
+            storeDetail: "木构韩屋小店屋檐下挂满干花与香囊，顾客可先抽取复古试香签，自由挑选香型并现场装入刺绣香包或护手霜礼盒中。",
+            diffHighlight: "相比圣水洞冷峻现代的香氛大店，这里采用“东方传统磨坊叙事 + 几千韩元即可起购的DIY香囊动线”，在古街区转化率极高。",
+            num: 14
+          },
+          {
+            id: "granhand-seochon-bukchon",
+            nameCn: "GRANHAND 北村韩屋1号创始总店",
+            nameKr: "그랑핸드 북촌",
+            nameEn: "GRANHAND Bukchon Main",
+            lat: 37.57985,
+            lng: 126.98545,
+            labelDir: "left",
+            address: "首尔钟路区北村路11街 19 (서울 종로구 북촌로11길 19)",
+            tags: [
+              "韩国国民平价沙龙香起点",
+              "迷你韩屋庭院",
+              "现场拓印姓名麻布签"
+            ],
+            brandIntro: "坚持“把香气变成日常日用品而非奢侈品”的韩国本土手工香氛品牌，从这间小小的北村韩屋走出，发展成全首尔最赚钱的独立香氛连锁之一。",
+            storeDetail: "面积不足30㎡的精致L型传统韩屋，木窗正对窄巷，木桌上摆满牛皮纸盒与复古打字印章，店员一对一引导嗅闻以韩国雨季、古树命名的香型。",
+            diffHighlight: "这是 GRANHAND 品牌的1号诞生地，证明了“极小面积历史保护建筑 + 极简SKU + 定制印名服务”能跑出惊人的单平坪效。",
+            num: 15
+          },
+          {
+            id: "tamburins-samcheong",
+            nameCn: "Tamburins 三清洞韩屋红砖旗舰店",
+            nameKr: "탬버린즈 삼청 플래그십스토어",
+            nameEn: "Tamburins Samcheong Flagship",
+            lat: 37.58125,
+            lng: 126.98215,
+            labelDir: "left",
+            address: "首尔钟路区栗谷路3街 84 (서울 종로구 율곡로3길 84)",
+            tags: [
+              "传统韩屋屋顶+现代红砖墙",
+              "四层艺术展陈",
+              "远眺景福宫瓦顶"
+            ],
+            brandIntro: "Tamburins 在钟路历史文化区打造的重磅建筑旗舰。",
+            storeDetail: "保留了顶层传统韩屋的飞檐青瓦与木梁结构，下方三层则用粗犷的现代红砖与混凝土加固，内部按楼层展示膏状香膏、蛋形唇膏、香水及大型泥塑艺术装置。",
+            diffHighlight: "与圣水店（纯地下废墟骨架）、新沙店（纯白现代建筑）鼎足而立，三清店是品牌唯一将“传统韩屋大木作与现代先锋装置”合二为一的门店。",
+            num: 16
+          },
+          {
+            id: "nonfiction-samcheong",
+            nameCn: "Nonfiction 三清洞东方庭院旗舰店",
+            nameKr: "논픽션 삼청",
+            nameEn: "Nonfiction Samcheong",
+            lat: 37.58065,
+            lng: 126.98185,
+            labelDir: "right",
+            address: "首尔钟路区北村路5街 84 (서울 종로구 북촌로5길 84)",
+            tags: [
+              "东方禅意枯山水庭院",
+              "韩纸灯具与原木洗礼台",
+              "定制礼盒包装"
+            ],
+            brandIntro: "Nonfiction 紧邻 Tamburins 三清店开设的东方美学概念店。",
+            storeDetail: "改造自一栋带静谧内院的双层建筑，大量运用韩国传统韩纸（Hanji）柔光灯箱、深色烧杉木与青苔石景，将试香洗手仪式转化为禅意净手体验。",
+            diffHighlight: "相比汉南洞总店的西式公寓书房感，三清洞店将韩国传统手工艺材质融入极简香氛零售。",
+            num: 17
+          },
+          {
+            id: "zero-space-bukchon",
+            nameCn: "Zero Space (Zero Per Zero) 首尔插画文创店",
+            nameKr: "제로스페이스 북촌",
+            nameEn: "Zero Space Design Shop",
+            lat: 37.57865,
+            lng: 126.98385,
+            labelDir: "bottom",
+            address: "首尔钟路区北村路5那街 30 (서울 종로구 북촌로5나길 30)",
+            tags: [
+              "首尔城市地图文创鼻祖",
+              "温暖亲情插画风",
+              "明信片与铁盒贴纸"
+            ],
+            brandIntro: "由两位平面设计师创立的韩国国民级插画设计工作室 Zero Per Zero 的官方直营店，最早凭借极具设计感的全球地铁线路图（City Railway System）及温馨家庭插画走红全亚洲。",
+            storeDetail: "小巧精致的木质展厅，满墙陈列首尔四季风景明信片、汉江主题拼图、复古航空行李贴纸与帆布包。",
+            diffHighlight: "展示了独立平面设计工作室如何把“城市地标与公共交通视觉符号”开发成永不过时的城市旅游伴手礼矩阵。",
+            num: 18
+          },
+          {
+            id: "object-samcheong",
+            nameCn: "Object 三清店 (韩屋屋檐下的插画杂货铺)",
+            nameKr: "오브젝트 삼청점",
+            nameEn: "Object Samcheong",
+            lat: 37.57945,
+            lng: 126.98255,
+            labelDir: "top",
+            address: "首尔钟路区北村路5街 6 (서울 종로구 북촌로5길 6)",
+            tags: [
+              "韩屋瓦顶DIY文创",
+              "北村散步动线核心",
+              "限定传统纹样布贴"
+            ],
+            brandIntro: "文创孵化平台 Object 在北村/三清洞韩屋街区设立的特色分店。",
+            storeDetail: "在一座迷你的传统青瓦韩屋内，集中展示韩国独立插画师创作的朝鲜虎、喜鹊、传统福袋主题刺绣布贴（Wappen），顾客可当场熨烫制作专属韩国纪念挂件。",
+            diffHighlight: "相比弘大西桥洞四层总店，三清店面积虽小，但专门开发了大量“新韩风（K-Heritage）限定刺绣配件”，外国游客成单率极高。",
+            num: 19
+          }
+        ]
+      },
+      {
+        id: "fashion",
+        name: "潮流服饰与复古买手街铺",
+        shortName: "潮流/买手",
+        color: "#e11d48",
+        badgeBg: "bg-rose-100 text-rose-900 border-rose-300",
+        isSpecial: false,
+        description: "益善洞与安国韩屋街区的服装店摒弃了现代商场感，转而利用韩屋木梁与复古庭院打造“老钱风买手店”与“复古改良服饰体验”。",
+        stores: [
+          {
+            id: "tout-y-est-samcheong",
+            nameCn: "Tout Y Est (투티에) 经典复古皮具韩屋旗舰店",
+            nameKr: "투티에 삼청 플래그십스토어",
+            nameEn: "Tout Y Est Flagship Store",
+            lat: 37.58015,
+            lng: 126.98155,
+            labelDir: "left",
+            address: "首尔钟路区三清路 52 (서울 종로구 삼청로 52)",
+            tags: [
+              "法式老钱风皮包黑马",
+              "古董木柜陈列",
+              "进军日本东京爆款"
+            ],
+            brandIntro: "近年来在韩国与日本极受追捧的复古法式皮具与配饰品牌（法语意为“一切皆在此”），主打牛皮公文包、法棍包与丝巾。",
+            storeDetail: "正对景福宫东墙，将古典木质博古架、黄铜台灯与温润的植鞣革皮包完美融合，购物氛围如同走进一位欧洲古董收藏家的书房。",
+            diffHighlight: "品牌全球唯一独立旗舰总店，展示了“单价1000~2000元人民币的轻奢女包如何靠极致古典书房陈列做出万元大牌质感”。",
+            num: 20
+          },
+          {
+            id: "blue-elephant-ikseon-anguk",
+            nameCn: "BLUE ELEPHANT 安国韩屋平价潮镜旗舰店",
+            nameKr: "블루엘리펀트 안국",
+            nameEn: "BLUE ELEPHANT Eyewear Anguk",
+            lat: 37.57725,
+            lng: 126.98585,
+            labelDir: "right",
+            address: "首尔钟路区北村路 6 (서울 종로구 북촌로 6)",
+            tags: [
+              "平替版Gentle Monster",
+              "4.9万韩元极致定价",
+              "韩屋石头庭院试戴"
+            ],
+            brandIntro: "2023–2026年韩国增长最凶猛的平价潮流眼镜黑马品牌——采用与 Gentle Monster 极其相似的先锋艺术空间陈列与韩系大框修饰脸型设计，但价格直接砍到**49,900韩元（约260元人民币，仅为GM的六分之一）**！",
+            storeDetail: "改造自安国站旁一栋带石造庭院的韩屋建筑，全店无导购贴身推销，数百款墨镜与平光镜敞开陈列在极简石台上供游客自由试戴。",
+            diffHighlight: "对零售从业者极具启发意义：当行业老大（Gentle Monster）把均价拉高至2000元人民币以上时，挑战者如何复刻其“空间策展感”并用260元极致性价比疯狂收割大众市场。",
+            num: 21
+          },
+          {
+            id: "ikseon-vintage-boutique",
+            nameCn: "益善洞复古摩登洋装与买手概念店 (익선동 빈티지/부티크)",
+            nameKr: "익선부티크",
+            nameEn: "Ikseon Vintage & Modern Boutique",
+            lat: 37.57315,
+            lng: 126.99045,
+            labelDir: "bottom",
+            address: "首尔钟路区水标路28街 28 (서울 종로구 수표로28길 28)",
+            tags: [
+              "韩剧《阳光先生》开化期风",
+              "租售一体商业模式",
+              "复古蕾丝帽饰与洋装"
+            ],
+            brandIntro: "源于益善洞独特历史背景的“1920年代京城摩登复古服饰（Gaehwagi Fashion）”配饰与买手集合店。",
+            storeDetail: "在韩屋天井下陈列大量复古珍珠网纱礼帽、蕾丝手套、古董胸针与改良韩服裙装，既可直接购买配饰，也提供按小时计费的穿搭街拍租赁服务。",
+            diffHighlight: "完美契合益善洞窄巷与清水堂、冬柏洋果店的复古场景，形成了“先逛买手店买/租一顶复古礼帽，再去隔壁咖啡馆拍照”的街区异业连带。",
+            num: 22
+          }
+        ]
+      },
+      {
+        id: "special",
+        name: "商圈独有特色：百年韩屋牧场工坊与复古游艺街铺",
+        shortName: "特色：韩屋工坊/游艺",
+        color: "#d97706",
+        badgeBg: "bg-amber-100 text-amber-900 border-amber-300",
+        isSpecial: true,
+        description: "益善洞虽然没有现代大型商超，但孕育出了全首尔独一无二的“将鲜奶酪制作超市、复古铁板游艺厅与精酿啤酒工坊塞进百年韩屋青瓦之下”的微缩商业奇观。",
+        stores: [
+          {
+            id: "cheese-industry-ikseon",
+            nameCn: "Cheese Industry (芝士工业) 益善韩屋牧场工坊",
+            nameKr: "치즈공업사 익선",
+            nameEn: "Cheese Industry Ikseon",
+            lat: 37.57355,
+            lng: 126.98945,
+            labelDir: "left",
+            address: "首尔钟路区水标路28街 33-7 (서울 종로구 수표로28길 33-7)",
+            tags: [
+              "韩屋牧场主题造景",
+              "每日现做鲜奶酪超市",
+              "餐饮+伴手礼复合"
+            ],
+            brandIntro: "由益善洞幕后推手 Glow Seoul 团队孵化的手工奶酪烘焙与轻食零售复合品牌，将西方牧场制酪工坊装进东方韩屋。",
+            storeDetail: "门前直接用稻草垛、木栅栏与复古牛奶桶造出一个微型农场庭院；推门进入韩屋，左侧是全透明的恒温奶酪制作室，冰柜里像精品超市一样陈列每日现做的布拉塔、切达芝士及牧场周边帆布包。",
+            diffHighlight: "在无法开设传统大商超的益善洞窄巷里，它用“前店后厂手工芝士超市 + 韩屋咖啡简餐”的混血形态，填补了街区生鲜烘焙伴手礼零售的空白。",
+            num: 23
+          },
+          {
+            id: "art-monster-ikseon",
+            nameCn: "Art Monster 益善洞韩屋精酿啤酒工坊",
+            nameKr: "아트몬스터 익선동점",
+            nameEn: "Art Monster Craft Beer Ikseon",
+            lat: 37.57272,
+            lng: 126.98988,
+            labelDir: "right",
+            address: "首尔钟路区敦化门路11多街 30 (서울 종로구 돈화문로11다길 30)",
+            tags: [
+              "国际啤酒大赛横扫奖牌",
+              "智能手环自助打酒墙",
+              "韩屋大院夜经济引擎"
+            ],
+            brandIntro: "多次斩获国际精酿啤酒大赛金奖的韩国本土精酿厂牌 Art Monster 在益善洞开设的韩屋旗舰店。",
+            storeDetail: "外门是古色古香的传统韩屋木门，步入内院后，一排排闪亮的现代不锈钢啤酒龙头直接镶嵌在韩屋砖墙上！顾客进门领取一枚RFID感应手环，即可在十余个酒头前自助按毫升打酒结账。",
+            diffHighlight: "解决了传统景区“到了晚上咖啡馆关门即变死街”的痛点，用“韩屋庭院+RFID自助精酿打酒模式”无缝接棒益善洞的晚间黄金消费时段。",
+            num: 24
+          }
+        ]
+      }
+    ]
+  }
+};
 
     // ============================================================================
-    // 【交互状态与地图控制逻辑】
+    // 【双地图引擎自适应控制器：Kakao Maps 优先 + Leaflet (Esri) 自动回退】
     // ============================================================================
-    let currentDistrictId = "seongsu";
+    let currentDistrictId = "myeongdong";
     let currentCategoryFilter = "all";
     let showPermanentLabels = true;
     let isHistoryExpanded = true;
     let activeStoreId = null;
 
-    let mapInstance = null;
-    let currentTileLayer = null;
-    let currentBasemapStyle = "clean_osm"; // 'clean_osm' | 'standard_osm' | 'wikimedia'
-    let markerLayerGroup = null;
-    const storeMarkersMap = {}; // id -> { marker, store }
+    let activeMapEngine = "kakao";
+    let kakaoMapInstance = null;
+    let kakaoOverlays = [];
+
+    let leafletMapInstance = null;
+    let leafletTileLayer = null;
+    let currentBasemapStyle = "clean_osm";
+    let leafletMarkerGroup = null;
+
+    const storeMarkersMap = {};
 
     const BASEMAP_CONFIGS = {
       clean_osm: {
         name: "底图: 极简街景",
+        kakaoType: "ROADMAP_CLEAN",
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
         options: {
-          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap',
+          attribution: 'Tiles &copy; Esri',
           maxZoom: 19,
           className: "clean-osm-tiles"
         }
       },
       standard_osm: {
         name: "底图: 全彩街道",
+        kakaoType: "ROADMAP",
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
         options: {
-          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap',
+          attribution: 'Tiles &copy; Esri',
           maxZoom: 19
         }
       },
       hot_osm: {
-        name: "底图: 地形街景",
+        name: "底图: 卫星/混成",
+        kakaoType: "HYBRID",
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
         options: {
-          attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap',
+          attribution: 'Tiles &copy; Esri',
           maxZoom: 19
         }
       }
     };
 
     function initApp() {
-      initLeafletMap();
       renderDistrictTabs();
-      loadDistrict(currentDistrictId);
       bindGlobalEvents();
+      initDualMapEngine();
     }
 
-    function applyBasemap(styleKey) {
-      if (currentTileLayer) {
-        mapInstance.removeLayer(currentTileLayer);
+    function initDualMapEngine() {
+      if (window.kakao && window.kakao.maps && typeof window.kakao.maps.load === "function") {
+        try {
+          window.kakao.maps.load(() => {
+            try {
+              const container = document.getElementById("seoulMap");
+              const initialDistrict = SEOUL_GUIDE_DATA[currentDistrictId];
+              const options = {
+                center: new window.kakao.maps.LatLng(initialDistrict.center[0], initialDistrict.center[1]),
+                level: initialDistrict.kakaoLevel || 4
+              };
+              kakaoMapInstance = new window.kakao.maps.Map(container, options);
+              const zoomControl = new window.kakao.maps.ZoomControl();
+              kakaoMapInstance.addControl(zoomControl, window.kakao.maps.ControlPosition.RIGHT);
+
+              activeMapEngine = "kakao";
+              applyBasemap(currentBasemapStyle);
+              loadDistrict(currentDistrictId);
+            } catch (innerErr) {
+              initLeafletFallback();
+            }
+          });
+          return;
+        } catch (err) {
+          initLeafletFallback();
+          return;
+        }
+      } else {
+        initLeafletFallback();
       }
-      const cfg = BASEMAP_CONFIGS[styleKey] || BASEMAP_CONFIGS.clean_osm;
-      currentTileLayer = L.tileLayer(cfg.url, cfg.options).addTo(mapInstance);
-      const btn = document.getElementById("switchBasemapBtn");
-      if (btn) btn.textContent = cfg.name;
     }
 
-    function initLeafletMap() {
+    function initLeafletFallback() {
+      activeMapEngine = "leaflet";
+      const container = document.getElementById("seoulMap");
+      container.innerHTML = "";
       const initialDistrict = SEOUL_GUIDE_DATA[currentDistrictId];
-      mapInstance = L.map("seoulMap", {
+      leafletMapInstance = L.map("seoulMap", {
         zoomControl: false,
         attributionControl: true
       }).setView(initialDistrict.center, initialDistrict.zoom);
 
-      // 100% Free & No-API-Key official OpenStreetMap tile layer with clean CSS filter
       applyBasemap(currentBasemapStyle);
+      L.control.zoom({ position: "bottomright" }).addTo(leafletMapInstance);
+      leafletMarkerGroup = L.layerGroup().addTo(leafletMapInstance);
 
-      L.control.zoom({ position: "bottomright" }).addTo(mapInstance);
-      markerLayerGroup = L.layerGroup().addTo(mapInstance);
+      loadDistrict(currentDistrictId);
+    }
+
+    function applyBasemap(styleKey) {
+      const cfg = BASEMAP_CONFIGS[styleKey] || BASEMAP_CONFIGS.clean_osm;
+      const btn = document.getElementById("switchBasemapBtn");
+      if (btn) btn.textContent = cfg.name;
+
+      const mapEl = document.getElementById("seoulMap");
+      if (activeMapEngine === "kakao" && kakaoMapInstance) {
+        if (cfg.kakaoType === "HYBRID") {
+          kakaoMapInstance.setMapTypeId(window.kakao.maps.MapTypeId.HYBRID);
+          mapEl.style.filter = "none";
+        } else if (cfg.kakaoType === "ROADMAP_CLEAN") {
+          kakaoMapInstance.setMapTypeId(window.kakao.maps.MapTypeId.ROADMAP);
+          mapEl.style.filter = "saturate(0.65) contrast(0.98)";
+        } else {
+          kakaoMapInstance.setMapTypeId(window.kakao.maps.MapTypeId.ROADMAP);
+          mapEl.style.filter = "none";
+        }
+      } else if (activeMapEngine === "leaflet" && leafletMapInstance) {
+        if (leafletTileLayer) {
+          leafletMapInstance.removeLayer(leafletTileLayer);
+        }
+        leafletTileLayer = L.tileLayer(cfg.url, cfg.options).addTo(leafletMapInstance);
+      }
     }
 
     function renderDistrictTabs() {
       const container = document.getElementById("districtTabs");
       container.innerHTML = "";
 
-      Object.values(SEOUL_GUIDE_DATA).forEach((district) => {
+      DISTRICT_ORDER.forEach((id) => {
+        const district = SEOUL_GUIDE_DATA[id];
+        if (!district) return;
         const isActive = district.id === currentDistrictId;
+        const totalStores = district.categories.reduce((acc, c) => acc + c.stores.length, 0);
+
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = isActive
           ? "shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold bg-stone-900 text-white shadow-xs flex items-center space-x-1 transition"
           : "shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium bg-white text-stone-600 border border-stone-200/80 hover:bg-stone-100 flex items-center space-x-1 transition";
 
-        const badgeDot = district.id === "seongsu" || district.id === "ikseon"
-          ? `<span class="w-1.5 h-1.5 rounded-full ${isActive ? 'bg-amber-400' : 'bg-emerald-500'}"></span>`
-          : "";
-
-        btn.innerHTML = `${badgeDot}<span>${district.name}</span>`;
+        btn.innerHTML = `
+          <span class="w-1.5 h-1.5 rounded-full ${isActive ? 'bg-amber-400' : 'bg-emerald-500'}"></span>
+          <span>${district.name}</span>
+          <span class="text-[10px] ${isActive ? 'text-stone-300' : 'text-stone-400'}">(${totalStores})</span>
+        `;
         btn.addEventListener("click", () => {
           if (currentDistrictId !== district.id) {
             currentDistrictId = district.id;
@@ -736,15 +3932,20 @@
       });
     }
 
+    function getOrderedCategories(district) {
+      // Ensure non-special categories appear first, and special categories appear at the very end
+      const regular = district.categories.filter((c) => !c.isSpecial);
+      const special = district.categories.filter((c) => c.isSpecial);
+      return [...regular, ...special];
+    }
+
     function loadDistrict(districtId) {
       const district = SEOUL_GUIDE_DATA[districtId];
       if (!district) return;
 
-      // Update Map header count
-      const totalStores = district.categories.reduce((acc, cat) => acc + cat.stores.length, 0);
-      document.getElementById("mapHeaderTitle").textContent = `${district.name} · ${totalStores}家标杆旺店同屏标注`;
+      // Requirement 5: Map header title is just the district name (e.g. "圣水洞")
+      document.getElementById("mapHeaderTitle").textContent = district.name;
 
-      // Update History Accordion
       document.getElementById("districtSubtitle").textContent = `${district.enName} · 商圈演进脉络 (${district.status})`;
       document.getElementById("districtTitle").textContent = district.headline;
 
@@ -775,10 +3976,11 @@
       const filterBar = document.getElementById("categoryFilterBar");
       filterBar.innerHTML = "";
 
-      const allCount = district.categories.reduce((sum, c) => sum + c.stores.length, 0);
+      const orderedCats = getOrderedCategories(district);
+      const allCount = orderedCats.reduce((sum, c) => sum + c.stores.length, 0);
       const pills = [
         { id: "all", label: `全部点位 (${allCount})`, color: "#1c1917" },
-        ...district.categories.map((c) => ({
+        ...orderedCats.map((c) => ({
           id: c.id,
           label: `${c.shortName} (${c.stores.length})`,
           color: c.color
@@ -812,7 +4014,8 @@
       labelEl.textContent = "二级目录跳转:";
       jumpBar.appendChild(labelEl);
 
-      district.categories.forEach((cat) => {
+      const orderedCats = getOrderedCategories(district);
+      orderedCats.forEach((cat) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white border border-stone-200/90 text-stone-700 shadow-2xs active:bg-stone-100 transition";
@@ -834,60 +4037,117 @@
     }
 
     function renderMapMarkers(district) {
-      markerLayerGroup.clearLayers();
       Object.keys(storeMarkersMap).forEach((k) => delete storeMarkersMap[k]);
+      const orderedCats = getOrderedCategories(district);
 
-      const boundsPoints = [];
+      if (activeMapEngine === "kakao" && kakaoMapInstance) {
+        kakaoOverlays.forEach((ov) => ov.setMap(null));
+        kakaoOverlays = [];
 
-      district.categories.forEach((cat) => {
-        if (currentCategoryFilter !== "all" && currentCategoryFilter !== cat.id) return;
+        const bounds = new window.kakao.maps.LatLngBounds();
+        let count = 0;
 
-        cat.stores.forEach((store) => {
-          boundsPoints.push([store.lat, store.lng]);
+        orderedCats.forEach((cat) => {
+          if (currentCategoryFilter !== "all" && currentCategoryFilter !== cat.id) return;
 
-          const isSelected = activeStoreId === store.id;
-          const iconHtml = `<div id="pin-${store.id}" class="custom-pin ${isSelected ? 'active-pin' : ''}" style="background-color: ${cat.color};">${store.num}</div>`;
+          cat.stores.forEach((store) => {
+            const pos = new window.kakao.maps.LatLng(store.lat, store.lng);
+            bounds.extend(pos);
+            count++;
 
-          const customIcon = L.divIcon({
-            className: "custom-div-icon",
-            html: iconHtml,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
-          });
-
-          const marker = L.marker([store.lat, store.lng], { icon: customIcon });
-
-          if (showPermanentLabels) {
-            const offsetMap = {
-              right: [14, 0],
-              left: [-14, 0],
-              top: [0, -14],
-              bottom: [0, 14]
-            };
+            const isSelected = activeStoreId === store.id;
             const dir = store.labelDir || "right";
-            marker.bindTooltip(`${store.num}. ${store.nameCn}`, {
-              permanent: true,
-              direction: dir,
-              offset: offsetMap[dir] || [12, 0],
-              className: `store-map-label ${isSelected ? "active-label" : ""}`
+            const labelHtml = showPermanentLabels
+              ? `<div id="label-${store.id}" data-map-store="${store.id}" class="store-map-label kakao-label-pos-${dir} ${isSelected ? 'active-label' : ''}">${store.num}. ${store.nameCn}</div>`
+              : "";
+
+            const contentHtml = `
+              <div class="kakao-marker-wrap" data-map-store="${store.id}">
+                <div id="pin-${store.id}" class="custom-pin ${isSelected ? 'active-pin' : ''}" style="background-color: ${cat.color};">${store.num}</div>
+                ${labelHtml}
+              </div>
+            `;
+
+            const overlay = new window.kakao.maps.CustomOverlay({
+              position: pos,
+              content: contentHtml,
+              xAnchor: 0.5,
+              yAnchor: 0.5,
+              zIndex: isSelected ? 999 : store.num
             });
-          }
 
-          marker.on("click", () => {
-            highlightAndScrollToStore(store.id, true);
+            overlay.setMap(kakaoMapInstance);
+            kakaoOverlays.push(overlay);
+            storeMarkersMap[store.id] = { store, category: cat, kakaoPos: pos, overlay };
           });
-
-          marker.addTo(markerLayerGroup);
-          storeMarkersMap[store.id] = { marker, store, category: cat };
         });
-      });
 
-      if (boundsPoints.length > 1) {
-        mapInstance.fitBounds(boundsPoints, { padding: [36, 36], maxZoom: 17 });
-      } else if (boundsPoints.length === 1) {
-        mapInstance.setView(boundsPoints[0], 16);
-      } else {
-        mapInstance.setView(district.center, district.zoom);
+        if (count > 1) {
+          kakaoMapInstance.setBounds(bounds, 36, 36, 36, 36);
+        } else if (count === 1) {
+          const singleStore = Object.values(storeMarkersMap)[0];
+          kakaoMapInstance.setCenter(singleStore.kakaoPos);
+          kakaoMapInstance.setLevel(3);
+        } else {
+          kakaoMapInstance.setCenter(new window.kakao.maps.LatLng(district.center[0], district.center[1]));
+          kakaoMapInstance.setLevel(district.kakaoLevel || 4);
+        }
+        return;
+      }
+
+      if (activeMapEngine === "leaflet" && leafletMapInstance && leafletMarkerGroup) {
+        leafletMarkerGroup.clearLayers();
+        const boundsPoints = [];
+
+        orderedCats.forEach((cat) => {
+          if (currentCategoryFilter !== "all" && currentCategoryFilter !== cat.id) return;
+
+          cat.stores.forEach((store) => {
+            boundsPoints.push([store.lat, store.lng]);
+            const isSelected = activeStoreId === store.id;
+            const iconHtml = `<div id="pin-${store.id}" class="custom-pin ${isSelected ? 'active-pin' : ''}" style="background-color: ${cat.color};">${store.num}</div>`;
+
+            const customIcon = L.divIcon({
+              className: "custom-div-icon",
+              html: iconHtml,
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
+            });
+
+            const marker = L.marker([store.lat, store.lng], { icon: customIcon });
+
+            if (showPermanentLabels) {
+              const offsetMap = {
+                right: [14, 0],
+                left: [-14, 0],
+                top: [0, -14],
+                bottom: [0, 14]
+              };
+              const dir = store.labelDir || "right";
+              marker.bindTooltip(`${store.num}. ${store.nameCn}`, {
+                permanent: true,
+                direction: dir,
+                offset: offsetMap[dir] || [12, 0],
+                className: `store-map-label ${isSelected ? "active-label" : ""}`
+              });
+            }
+
+            marker.on("click", () => {
+              highlightAndScrollToStore(store.id, true);
+            });
+
+            marker.addTo(leafletMarkerGroup);
+            storeMarkersMap[store.id] = { marker, store, category: cat };
+          });
+        });
+
+        if (boundsPoints.length > 1) {
+          leafletMapInstance.fitBounds(boundsPoints, { padding: [36, 36], maxZoom: 17 });
+        } else if (boundsPoints.length === 1) {
+          leafletMapInstance.setView(boundsPoints[0], 16);
+        } else {
+          leafletMapInstance.setView(district.center, district.zoom);
+        }
       }
     }
 
@@ -895,14 +4155,15 @@
       const container = document.getElementById("categoriesContainer");
       container.innerHTML = "";
 
-      district.categories.forEach((cat) => {
+      const orderedCats = getOrderedCategories(district);
+
+      orderedCats.forEach((cat) => {
         if (currentCategoryFilter !== "all" && currentCategoryFilter !== cat.id) return;
 
         const section = document.createElement("section");
         section.id = `cat-section-${cat.id}`;
         section.className = "bg-white rounded-2xl border border-stone-200/90 shadow-sm overflow-hidden scroll-mt-28";
 
-        // Category Header (Collapsible)
         const headerBtn = document.createElement("button");
         headerBtn.type = "button";
         headerBtn.className = "w-full px-4 py-3 bg-stone-50/90 border-b border-stone-200/70 flex items-center justify-between text-left";
@@ -910,11 +4171,11 @@
           <div class="flex items-center space-x-2">
             <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${cat.color}"></span>
             <div>
-              <div class="flex items-center space-x-1.5">
+              <div class="flex items-center space-x-1.5 flex-wrap">
                 <h3 class="text-sm font-bold text-stone-900">${cat.name}</h3>
                 <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border ${cat.badgeBg}">${cat.stores.length} 店</span>
               </div>
-              <p class="text-[11px] text-stone-500 mt-0.5">${cat.description}</p>
+              <p class="text-[11px] text-stone-500 mt-0.5 leading-relaxed">${cat.description}</p>
             </div>
           </div>
           <span class="text-xs text-stone-400 shrink-0 ml-2" data-cat-chevron="${cat.id}">收起 ▲</span>
@@ -940,7 +4201,6 @@
           ).join("");
 
           card.innerHTML = `
-            <!-- Store Title & Map Locate Trigger -->
             <div class="flex items-start justify-between gap-2">
               <div class="flex items-start space-x-2.5">
                 <span class="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 shadow-2xs" style="background:${cat.color}">
@@ -956,12 +4216,10 @@
               </button>
             </div>
 
-            <!-- Tags -->
             <div class="flex flex-wrap gap-1.5">
               ${tagsHtml}
             </div>
 
-            <!-- Structured 3-Part Retail Breakdown -->
             <div class="space-y-2 text-xs leading-relaxed">
               <div class="p-2.5 rounded-xl bg-stone-50 border border-stone-200/60">
                 <span class="font-bold text-stone-900">① 品牌背景：</span>
@@ -972,12 +4230,11 @@
                 <span class="text-stone-700">${store.storeDetail}</span>
               </div>
               <div class="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/80">
-                <span class="font-bold text-amber-950">③ 同品牌差异化亮点：</span>
+                <span class="font-bold text-amber-950">③ 与同品牌其他店差异：</span>
                 <span class="text-amber-900">${store.diffHighlight}</span>
               </div>
             </div>
 
-            <!-- Address & One-Tap Copy Name Bar -->
             <div class="pt-1 flex flex-col gap-2">
               <div class="text-[11px] text-stone-500 truncate">
                 📍 地址：${store.address}
@@ -1007,32 +4264,36 @@
       const entry = storeMarkersMap[storeId];
       if (!entry) return;
 
-      // Center map smoothly on selected store
-      mapInstance.setView([entry.store.lat, entry.store.lng], 17, { animate: true });
+      if (activeMapEngine === "kakao" && kakaoMapInstance && entry.kakaoPos) {
+        kakaoMapInstance.panTo(entry.kakaoPos);
+        Object.keys(storeMarkersMap).forEach((id) => {
+          const pinEl = document.getElementById(`pin-${id}`);
+          const labelEl = document.getElementById(`label-${id}`);
+          const item = storeMarkersMap[id];
+          if (pinEl) pinEl.classList.toggle("active-pin", id === storeId);
+          if (labelEl) labelEl.classList.toggle("active-label", id === storeId);
+          if (item && item.overlay) {
+            item.overlay.setZIndex(id === storeId ? 9999 : item.store.num);
+          }
+        });
+      } else if (activeMapEngine === "leaflet" && leafletMapInstance) {
+        leafletMapInstance.setView([entry.store.lat, entry.store.lng], 17, { animate: true });
+        Object.keys(storeMarkersMap).forEach((id) => {
+          const pinEl = document.getElementById(`pin-${id}`);
+          if (pinEl) pinEl.classList.toggle("active-pin", id === storeId);
+          const m = storeMarkersMap[id].marker;
+          if (m && m.getTooltip() && m.getTooltip().getElement()) {
+            m.getTooltip().getElement().classList.toggle("active-label", id === storeId);
+          }
+        });
+      }
 
-      // Update visual highlight on pins & tooltips
-      Object.keys(storeMarkersMap).forEach((id) => {
-        const pinEl = document.getElementById(`pin-${id}`);
-        if (pinEl) {
-          if (id === storeId) pinEl.classList.add("active-pin");
-          else pinEl.classList.remove("active-pin");
-        }
-        const m = storeMarkersMap[id].marker;
-        const tooltip = m.getTooltip();
-        if (tooltip && tooltip.getElement()) {
-          if (id === storeId) tooltip.getElement().classList.add("active-label");
-          else tooltip.getElement().classList.remove("active-label");
-        }
-      });
-
-      // Highlight card
       document.querySelectorAll("[id^='store-card-']").forEach((el) => {
         el.classList.remove("bg-amber-50/60", "ring-2", "ring-amber-400");
       });
 
       const targetCard = document.getElementById(`store-card-${storeId}`);
       if (targetCard) {
-        // Ensure parent category is expanded
         const parentWrapper = targetCard.parentElement;
         if (parentWrapper && parentWrapper.classList.contains("hidden")) {
           parentWrapper.classList.remove("hidden");
@@ -1081,7 +4342,6 @@
     }
 
     function bindGlobalEvents() {
-      // Switch basemap style (Clean OSM / Standard Color OSM / HOT OSM)
       const switchBasemapBtn = document.getElementById("switchBasemapBtn");
       switchBasemapBtn.addEventListener("click", () => {
         const order = ["clean_osm", "standard_osm", "hot_osm"];
@@ -1090,7 +4350,6 @@
         applyBasemap(currentBasemapStyle);
       });
 
-      // Toggle permanent store name labels on map
       const toggleLabelsBtn = document.getElementById("toggleLabelsBtn");
       toggleLabelsBtn.addEventListener("click", () => {
         showPermanentLabels = !showPermanentLabels;
@@ -1098,13 +4357,11 @@
         loadDistrict(currentDistrictId);
       });
 
-      // Reset map bounds
       document.getElementById("resetMapBtn").addEventListener("click", () => {
         activeStoreId = null;
         renderMapMarkers(SEOUL_GUIDE_DATA[currentDistrictId]);
       });
 
-      // History Accordion toggle
       document.getElementById("historyAccordionBtn").addEventListener("click", () => {
         isHistoryExpanded = !isHistoryExpanded;
         const body = document.getElementById("historyAccordionBody");
@@ -1113,7 +4370,6 @@
         icon.textContent = isHistoryExpanded ? "收起 ▲" : "展开 ▼";
       });
 
-      // Delegate clicks for copy buttons, map locate buttons, and map tooltips
       document.body.addEventListener("click", (e) => {
         const copyBtn = e.target.closest("[data-copy-text]");
         if (copyBtn) {
@@ -1131,9 +4387,17 @@
           }
           return;
         }
+
+        const mapStoreClick = e.target.closest("[data-map-store]");
+        if (mapStoreClick) {
+          const storeId = mapStoreClick.getAttribute("data-map-store");
+          if (storeId) {
+            highlightAndScrollToStore(storeId, true);
+          }
+          return;
+        }
       });
 
-      // Guide Modal
       const modal = document.getElementById("guideModal");
       document.getElementById("toggleGuideBtn").addEventListener("click", () => {
         modal.classList.remove("hidden");
