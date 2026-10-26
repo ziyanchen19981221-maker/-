@@ -71,6 +71,10 @@
       border-color: #fef08a;
       box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.35);
     }
+    /* Desaturate standard OSM tiles slightly so store pins & labels stand out cleanly */
+    .clean-osm-tiles {
+      filter: saturate(0.35) contrast(0.95) brightness(1.03);
+    }
   </style>
 </head>
 <body class="min-h-screen pb-16">
@@ -106,6 +110,9 @@
           <h2 class="text-xs font-bold text-stone-800" id="mapHeaderTitle">商圈旺店分布图（点位+店名同屏）</h2>
         </div>
         <div class="flex items-center space-x-1.5">
+          <button id="switchBasemapBtn" type="button" class="text-[11px] font-medium px-2 py-1 rounded bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition">
+            底图: 极简街景
+          </button>
           <button id="toggleLabelsBtn" type="button" class="text-[11px] font-medium px-2 py-1 rounded bg-stone-100 text-stone-700 hover:bg-stone-200 transition">
             隐藏店名
           </button>
@@ -635,14 +642,54 @@
     let activeStoreId = null;
 
     let mapInstance = null;
+    let currentTileLayer = null;
+    let currentBasemapStyle = "clean_osm"; // 'clean_osm' | 'standard_osm' | 'wikimedia'
     let markerLayerGroup = null;
     const storeMarkersMap = {}; // id -> { marker, store }
+
+    const BASEMAP_CONFIGS = {
+      clean_osm: {
+        name: "底图: 极简街景",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap',
+          maxZoom: 19,
+          className: "clean-osm-tiles"
+        }
+      },
+      standard_osm: {
+        name: "底图: 全彩街道",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap',
+          maxZoom: 19
+        }
+      },
+      hot_osm: {
+        name: "底图: 地形街景",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap',
+          maxZoom: 19
+        }
+      }
+    };
 
     function initApp() {
       initLeafletMap();
       renderDistrictTabs();
       loadDistrict(currentDistrictId);
       bindGlobalEvents();
+    }
+
+    function applyBasemap(styleKey) {
+      if (currentTileLayer) {
+        mapInstance.removeLayer(currentTileLayer);
+      }
+      const cfg = BASEMAP_CONFIGS[styleKey] || BASEMAP_CONFIGS.clean_osm;
+      currentTileLayer = L.tileLayer(cfg.url, cfg.options).addTo(mapInstance);
+      const btn = document.getElementById("switchBasemapBtn");
+      if (btn) btn.textContent = cfg.name;
     }
 
     function initLeafletMap() {
@@ -652,12 +699,8 @@
         attributionControl: true
       }).setView(initialDistrict.center, initialDistrict.zoom);
 
-      // Clean CartoDB Positron light basemap so store labels pop clearly
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: "abcd",
-        maxZoom: 19
-      }).addTo(mapInstance);
+      // 100% Free & No-API-Key official OpenStreetMap tile layer with clean CSS filter
+      applyBasemap(currentBasemapStyle);
 
       L.control.zoom({ position: "bottomright" }).addTo(mapInstance);
       markerLayerGroup = L.layerGroup().addTo(mapInstance);
@@ -1038,6 +1081,15 @@
     }
 
     function bindGlobalEvents() {
+      // Switch basemap style (Clean OSM / Standard Color OSM / HOT OSM)
+      const switchBasemapBtn = document.getElementById("switchBasemapBtn");
+      switchBasemapBtn.addEventListener("click", () => {
+        const order = ["clean_osm", "standard_osm", "hot_osm"];
+        const nextIdx = (order.indexOf(currentBasemapStyle) + 1) % order.length;
+        currentBasemapStyle = order[nextIdx];
+        applyBasemap(currentBasemapStyle);
+      });
+
       // Toggle permanent store name labels on map
       const toggleLabelsBtn = document.getElementById("toggleLabelsBtn");
       toggleLabelsBtn.addEventListener("click", () => {
