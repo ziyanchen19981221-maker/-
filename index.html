@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>韩国首尔商业巡店手册 (MVP) · 咖啡/零售从业者专版</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background-color: #f4f4f0;
+      color: #1c1917;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Hide scrollbar for Chrome, Safari and Opera */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    /* Hide scrollbar for IE, Edge and Firefox */
+    .no-scrollbar {
+      -ms-overflow-style: none;  /* IE and Edge */
+      scrollbar-width: none;  /* Firefox */
+    }
+    /* Custom permanent map labels */
+    .store-map-label {
+      background: rgba(255, 255, 255, 0.96);
+      border: 1.5px solid #292524;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #1c1917;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.14);
+      white-space: nowrap;
+      pointer-events: auto;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .store-map-label.active-label {
+      background: #1c1917;
+      color: #ffffff;
+      border-color: #f59e0b;
+      transform: scale(1.08);
+      z-index: 9999 !important;
+    }
+    .leaflet-tooltip-top:before,
+    .leaflet-tooltip-bottom:before,
+    .leaflet-tooltip-left:before,
+    .leaflet-tooltip-right:before {
+      display: none;
+    }
+    .custom-pin {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+      border: 2px solid white;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.28);
+      transition: transform 0.2s ease;
+    }
+    .custom-pin.active-pin {
+      transform: scale(1.25);
+      border-color: #fef08a;
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.35);
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-16">
+
+  <!-- Top Sticky Header & Primary Level-1 District Navigation -->
+  <header class="sticky top-0 z-40 bg-[#f4f4f0]/95 backdrop-blur-md border-b border-stone-200/80">
+    <div class="max-w-md mx-auto px-4 pt-3 pb-2">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <span class="inline-block px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase bg-stone-900 text-amber-300 rounded">MVP 概念验证版</span>
+          <h1 class="text-base font-bold text-stone-900 tracking-tight mt-0.5">首尔商业巡店考察指南</h1>
+        </div>
+        <button id="toggleGuideBtn" type="button" class="text-xs font-medium text-stone-600 bg-white border border-stone-300 px-2.5 py-1.5 rounded-lg shadow-sm active:scale-95 transition">
+          数据维护说明
+        </button>
+      </div>
+
+      <!-- Level 1 Directory: 6 Major Commercial Districts -->
+      <div class="flex space-x-1.5 overflow-x-auto no-scrollbar py-1" id="districtTabs" role="tablist">
+        <!-- Populated dynamically via JS -->
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Mobile Container -->
+  <main class="max-w-md mx-auto px-3.5 pt-3 space-y-3.5">
+
+    <!-- Section 1: Interactive Map Card -->
+    <section class="bg-white rounded-2xl border border-stone-200/90 shadow-sm overflow-hidden">
+      <div class="px-3.5 py-2.5 border-b border-stone-100 flex items-center justify-between">
+        <div class="flex items-center space-x-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+          <h2 class="text-xs font-bold text-stone-800" id="mapHeaderTitle">商圈旺店分布图（点位+店名同屏）</h2>
+        </div>
+        <div class="flex items-center space-x-1.5">
+          <button id="toggleLabelsBtn" type="button" class="text-[11px] font-medium px-2 py-1 rounded bg-stone-100 text-stone-700 hover:bg-stone-200 transition">
+            隐藏店名
+          </button>
+          <button id="resetMapBtn" type="button" class="text-[11px] font-medium px-2 py-1 rounded bg-stone-900 text-white hover:bg-stone-800 transition">
+            全览复位
+          </button>
+        </div>
+      </div>
+
+      <!-- Map Container -->
+      <div class="relative h-64 w-full bg-stone-100">
+        <div id="seoulMap" class="h-full w-full z-10"></div>
+      </div>
+
+      <!-- Category Filter Pills under Map -->
+      <div class="px-3 py-2 bg-stone-50 border-t border-stone-100 flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar" id="categoryFilterBar">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- Section 2: Level-1 District Historical Evolution & Commercial Context (Collapsible) -->
+    <section class="bg-white rounded-2xl border border-stone-200/90 shadow-sm overflow-hidden">
+      <button id="historyAccordionBtn" type="button" class="w-full px-4 py-3 flex items-center justify-between text-left bg-stone-900 text-white">
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-amber-300 font-semibold" id="districtSubtitle">SEONGSU-DONG · 商圈演进脉络</div>
+          <h2 class="text-sm font-bold mt-0.5" id="districtTitle">圣水洞：从手工鞋匠工厂区到亚洲先锋零售实验场</h2>
+        </div>
+        <span id="historyAccordionIcon" class="text-xs bg-stone-800 px-2 py-1 rounded text-stone-200 transition-transform duration-200">收起 ▲</span>
+      </button>
+
+      <div id="historyAccordionBody" class="p-4 space-y-3 text-xs leading-relaxed text-stone-700">
+        <!-- Timeline & commercial summary injected by JS -->
+      </div>
+    </section>
+
+    <!-- Quick Jump Secondary Directory Bar -->
+    <nav class="sticky top-[82px] z-30 bg-[#f4f4f0]/95 backdrop-blur py-1.5">
+      <div class="flex items-center space-x-2 overflow-x-auto no-scrollbar" id="subCategoryJumpBar">
+        <!-- Populated by JS -->
+      </div>
+    </nav>
+
+    <!-- Section 3: Level-2 Directories & Store Cards -->
+    <div id="categoriesContainer" class="space-y-4">
+      <!-- Populated by JS -->
+    </div>
+
+  </main>
+
+  <!-- Toast Notification for Clipboard Copy -->
+  <div id="copyToast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 translate-y-2 transition-all duration-200">
+    <div class="bg-stone-900/95 text-white px-4 py-2.5 rounded-xl shadow-lg border border-stone-700 flex items-center space-x-2 text-xs">
+      <span class="text-emerald-400 font-bold">✓</span>
+      <span id="copyToastText">已复制店名，可直接粘贴至地图软件搜索</span>
+    </div>
+  </div>
+
+  <!-- Modal for How to Edit/Deploy on GitHub Pages -->
+  <div id="guideModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-4 shadow-xl border border-stone-200 space-y-3">
+      <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
+        <h3 class="text-sm font-bold text-stone-900">如何修改内容与部署到 GitHub Pages</h3>
+        <button id="closeGuideBtn" type="button" class="text-xs text-stone-500 hover:text-stone-900 px-2 py-0.5 rounded bg-stone-100">关闭</button>
+      </div>
+      <div class="text-xs text-stone-600 space-y-2 leading-relaxed">
+        <p><strong class="text-stone-900">1. 为什么这是 MVP 最小可行模型？</strong><br/>目前完整录入了<strong>圣水洞（6家标杆店）</strong>与<strong>益善洞（2家标杆店）</strong>的全量结构，其余4个商圈（明洞、弘大、汉南洞、江南）已预留好一级目录切换框架。</p>
+        <p><strong class="text-stone-900">2. 以后怎么改文字或加新店？</strong><br/>打开本文件源码，搜索 <code class="bg-stone-100 px-1 py-0.5 rounded text-stone-800">SEOUL_GUIDE_DATA</code>，所有商圈历史、二级目录、店名、经纬度都在最上方整齐排列，直接改中文或让 AI 帮你追加即可。</p>
+        <p><strong class="text-stone-900">3. 一键复制店名逻辑：</strong><br/>每家门店卡片均提供<strong>“复制韩文店名”</strong>与<strong>“复制英文/招牌店名”</strong>两个按钮，方便同行在 Naver Map、Kakao Map 或 Google Maps 中直接粘贴检索。</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================================
+    // 【核心数据配置区 SEOUL_GUIDE_DATA】
+    // 后续增删门店、修改商圈历史脉络，只需修改此对象即可，无需改动下方渲染与地图逻辑
+    // ============================================================================
+    const SEOUL_GUIDE_DATA = {
+      seongsu: {
+        id: "seongsu",
+        name: "圣水洞",
+        enName: "SEONGSU-DONG",
+        status: "MVP 完整示范",
+        center: [37.5436, 127.0568],
+        zoom: 15,
+        headline: "圣水洞：从手工鞋匠工厂区到亚洲先锋零售实验场",
+        retailOverview: "如果来首尔只能看一个商圈，90% 的咖啡与新零售从业者会首选圣水洞。这里打破了传统购物中心标准铺位的束缚，以500~2000㎡的独栋红砖废旧工厂、修车行和仓库为载体，成为全亚洲高概念快闪（Pop-up）、策展型旗舰店与工业风烘焙咖啡的最高密度聚集区。",
+        timeline: [
+          {
+            period: "1960s–1990s · 工业底色",
+            desc: "曾是首尔最大的轻工业制造基地之一，聚集了数百家制鞋作坊、印刷厂、五金染色厂与汽车维修车间，留下了独特的红砖坡屋顶建筑群与挑高无柱空间。"
+          },
+          {
+            period: "2010s初期 · 废墟咖啡启蒙",
+            desc: "随着传统制造业外迁与租金洼地效应，以大林仓库（Daelim Changgo，2011）、Cafe Onion（2016）为代表的先锋主理人入驻，不粉饰斑驳水泥墙面，开创了席卷亚洲的“废墟工业风咖啡”浪潮。"
+          },
+          {
+            period: "2020至今 · 顶流快闪与重奢策展时代",
+            desc: "演武场路（Yeonmujang-gil）成为韩国品牌价值放大器。Dior 概念店、Tamburins 骨骼水泥建筑、Musinsa 等巨头相继拿地建独栋，形成“特种咖啡 + 策展式香氛美妆 + 复合选品”的高坪效商业生态。"
+          }
+        ],
+        categories: [
+          {
+            id: "special",
+            name: "商圈独有特色：策展型快闪与复合空间",
+            shortName: "特色：策展/快闪",
+            color: "#d97706", // amber-600
+            badgeBg: "bg-amber-100 text-amber-900 border-amber-300",
+            isSpecial: true,
+            description: "圣水洞区别于首尔其他商圈的核心壁垒在于「空间即媒体」。这里的门店往往牺牲高达40%~60%的货架陈列面积，全部用来做大型艺术装置、庭院造景或跨业态策展。",
+            stores: [
+              {
+                num: 1,
+                id: "dior-seongsu",
+                nameCn: "Dior 圣水概念店",
+                nameKr: "디올 성수",
+                nameEn: "Dior Seongsu",
+                lat: 37.54415,
+                lng: 127.05785,
+                labelDir: "right",
+                address: "首尔城东区演武场5街 7 (서울 성동구 연무장5길 7)",
+                tags: ["重奢本土化标杆", "温室花园建筑", "数字化预约动线"],
+                brandIntro: "法国LVMH集团旗下顶级时装屋 Christian Dior。近年来在年轻化与本土文化联结上动作极为激进，擅长通过极具视觉冲击力的限时建筑撬动社交媒体自然流量。",
+                storeDetail: "受巴黎蒙田大道30号总店启发，以金属网格与通透玻璃在圣水洞街头搭建出一座挑高温室宫殿，外围环绕韩国本土野花与松树庭院。店内集成高端鞋包展售与 Café Dior。",
+                diffHighlight: "【与同品牌其他店差异】不同于百货公司内封闭高冷的传统重奢专柜，圣水店原本作为限时快闪落地，因现象级打卡热度转为长期概念空间；它是全韩唯一完全采用全透明街边玻璃温室结构、将本土韩屋自然造景与法式铁艺结合的门店，甚至带动了整条演武场路租金翻倍。"
+              },
+              {
+                num: 2,
+                id: "lcdc-seoul",
+                nameCn: "LCDC SEOUL 复合空间",
+                nameKr: "엘씨디씨 서울",
+                nameEn: "LCDC SEOUL",
+                lat: 37.54602,
+                lng: 127.05895,
+                labelDir: "top",
+                address: "首尔城东区演武场17街 10 (서울 성동구 연무장17길 10)",
+                tags: ["汽车修理厂改造", "四层垂直社区", "小众主理人孵化"],
+                brandIntro: "由韩国时装集团 SJ Group（旗下拥有袋鼠品牌 Kangol 韩国运营权及自创服饰品牌）发起并打造的商业地产与生活方式内容运营品牌。",
+                storeDetail: "将一座四层高的旧汽车修理厂改造为带中庭广场的垂直商业综合体：1楼为网红咖啡厅 Ephemera 与快闪展厅，2楼为自营选品店 Le Conte Des Contes，3楼聚集了6~8家微型独立设计师文创、香氛与Vintage小店，4楼为天台酒吧 Bar Postscript。",
+                diffHighlight: "【商业模型特殊性】它不是单一品牌门店，而是“大品牌做房东+策展人、小主理人贡献内容度”的微型非标商业体模板。3楼每个房间仅15~25㎡，却极好地解决了独立小品牌进驻核心商圈成本过高的痛点。"
+              }
+            ]
+          },
+          {
+            id: "coffee",
+            name: "咖啡与烘焙旺店",
+            shortName: "咖啡/烘焙",
+            color: "#059669", // emerald-600
+            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+            isSpecial: false,
+            description: "圣水洞的咖啡馆深刻影响了过去五年国内网红烘焙与工业风咖啡店的视觉体系——“前店后厂明档烘焙 + 中央巨型金属/石头摆台 + 极强单品记忆点”。",
+            stores: [
+              {
+                num: 3,
+                id: "cafe-onion-seongsu",
+                nameCn: "Cafe Onion 圣水店",
+                nameKr: "어니언 성수",
+                nameEn: "Cafe Onion Seongsu",
+                lat: 37.54478,
+                lng: 127.05042,
+                labelDir: "left",
+                address: "首尔城东区峨嵯山路9街 8 (서울 성동구 아차산로9길 8)",
+                tags: ["废墟工业风鼻祖", "雪山パン Pandoro", "前店后厂烘焙"],
+                brandIntro: "由韩国设计创意团队 Fabrikr 主导创立的精品咖啡与烘焙品牌（母公司亦孵化了广藏市场爆红的复古麻花店）。品牌核心壁垒在于对老旧建筑肌理的极致保留与高辨识度烘焙视觉。",
+                storeDetail: "圣水洞空间改造的开山之作。门店前身建于1970年代，曾先后作为超市、食堂、住宅与金属零件修理厂。门店保留了断壁残垣、裸露红砖与水泥地面，一楼中央长桌铺满数十款现烤面包（以撒满糖粉的“雪山包 Pandoro”最出圈），二楼为屋顶露台与透明烘焙工坊。",
+                diffHighlight: "【与同品牌其他店差异】Onion 每家店完全拒绝复制同一套装修：安国店（Anguk）是全韩屋庭院木构风，广藏市场店（Gwangjang）是市井摊档胶带涂鸦风，而圣水店则是品牌的1号发源地与唯一纯正的重工业废墟风代表，烘焙品类的陈列体量也是各店之最。"
+              },
+              {
+                num: 4,
+                id: "camel-coffee-seongsu",
+                nameCn: "Camel Coffee 圣水1号店",
+                nameKr: "카멜커피 성수점",
+                nameEn: "Camel Coffee Seongsu",
+                lat: 37.54192,
+                lng: 127.05815,
+                labelDir: "bottom",
+                address: "首尔城东区圣水二路7街 26 (서울 성동구 성수이로7길 26)",
+                tags: ["小面积高坪效", "招牌特调奶咖", "主理人IP驱动"],
+                brandIntro: "由极具个人穿搭与审美风格的网红主理人 Park Kang-hyun（人称 Mr. Camel）创立的复古街头精品咖啡品牌，凭借一款高甜醇厚、仅小杯出品的签名奶咖（Camel Coffee）火遍全韩并进军现代百货。",
+                storeDetail: "藏在圣水洞支路小巷里的一间极小独栋民房改造店，门头是剥落的复古棕木与深绿色遮阳棚，室内摆满主理人淘来的中古家具与怀旧挂画，空间虽窄但翻台率极高。",
+                diffHighlight: "【与同品牌其他店差异】虽然 Camel 后来在现代百货（The Hyundai Seoul）、清潭洞等地开了更宽敞明亮的商场店与旗舰店，但圣水这家是品牌的初代街巷精神图腾，保留了最原始的脏旧复古街角感，是考察“几十平米小店如何靠单一爆品+主理人审美做出全国连锁”的必看样本。"
+              }
+            ]
+          },
+          {
+            id: "supermarket",
+            name: "商超与生活方式集合店",
+            shortName: "商超/集合店",
+            color: "#2563eb", // blue-600
+            badgeBg: "bg-blue-100 text-blue-900 border-blue-300",
+            isSpecial: false,
+            description: "在圣水洞，连传统意义上的美妆超市与日用百货都彻底重构了货架逻辑，从“大卖场堆头”转向“体验式大店”。",
+            stores: [
+              {
+                num: 5,
+                id: "olive-young-n",
+                nameCn: "Olive Young N 圣水旗舰店",
+                nameKr: "올리브영N 성수",
+                nameEn: "Olive Young N Seongsu",
+                lat: 37.54395,
+                lng: 127.05375,
+                labelDir: "bottom",
+                address: "首尔城东区演武场7街 13 (서울 성동구 연무장7길 13)",
+                tags: ["五层巨型概念店", "美妆商超进化形态", "皮肤诊断与VIP酒廊"],
+                brandIntro: "CJ集团旗下的韩国国民级健康与美妆集合商超（被誉为韩国版丝芙兰+屈臣氏结合体），市占率超过70%，是无数韩国中小K-Beauty品牌的孵化器。",
+                storeDetail: "共5层、总面积超4600㎡（约1400坪）的超级复合商业空间。字母“N”代表 New、Next、Nest。1楼几乎不放传统密集货架，而是做成大型主题展览区与咖啡烘焙吧；2~3楼按彩妆趋势、头皮护理、健康食品做沉浸式分区并提供专业仪器测肤与定制彩妆；4楼设有VIP会员休息室与直播间。",
+                diffHighlight: "【与同品牌其他店差异】这是全韩1300多家 Olive Young 中唯一冠以“N”字头的未来实验室店！普通门店（包括明洞旗舰店）核心逻辑是“高密度SKU货架+快速扫货结账”，而圣水N店彻底砍掉了便利店式的拥挤感，把美妆商超做成了可逛2小时的美妆主题乐园。"
+              }
+            ]
+          },
+          {
+            id: "cultural",
+            name: "品牌文创与香氛设计",
+            shortName: "品牌文创",
+            color: "#9333ea", // purple-600
+            badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
+            isSpecial: false,
+            description: "圣水洞的文创与香氛店擅长将廉价日用品（如回形针、护手霜）通过极致的剧场灯光与叙事包装，卖出高溢价与礼品属性。",
+            stores: [
+              {
+                num: 6,
+                id: "point-of-view",
+                nameCn: "Point of View 文具选品店",
+                nameKr: "포인트오브뷰 서울",
+                nameEn: "Point of View Seoul",
+                lat: 37.54355,
+                lng: 127.05485,
+                labelDir: "left",
+                address: "首尔城东区演武场街 18 (서울 성동구 연무장길 18)",
+                tags: ["三层文具博物馆", "极致陈列美学", "高客单自有文创"],
+                brandIntro: "由圣水洞知名咖啡馆 Zagmachi 的主理人创立的高端文具与桌面美学策展品牌，主张“文具是帮助创作者确立视角的工具”。",
+                storeDetail: "三层独栋空间。1楼偏重书写工具、印章与自有品牌纸品；2楼结合古典木柜与剧场级聚光灯，陈列来自全球的剪刀、黄铜镇纸与桌面器物；3楼为灵感图书与艺术展陈。每一件几块钱的小夹子都被放在丝绒托盘或石膏基座上展示。",
+                diffHighlight: "【与同品牌其他店差异】虽然品牌在现代百货开设了专柜，但圣水洞三层独栋总店拥有完整的暗调声光动线与最高比例的独家联名商品，是零售同行学习“如何靠道具陈列把低单价标品做成高毛利礼品”的教科书。"
+              },
+              {
+                num: 7,
+                id: "tamburins-seongsu",
+                nameCn: "Tamburins 圣水旗舰店",
+                nameKr: "탬버린즈 성수 플래그십스토어",
+                nameEn: "Tamburins Seongsu Flagship",
+                lat: 37.54392,
+                lng: 127.05818,
+                labelDir: "right",
+                address: "首尔城东区演武场5街 8 (서울 성동구 연무장5길 8)",
+                tags: ["骨架废墟建筑", "下沉式香氛展厅", "Gentle Monster同门"],
+                brandIntro: "由眼镜潮牌 Gentle Monster 母公司 IICOMBINED 孵化的艺术香氛与个护品牌，凭借链条护手霜、蛋形唇膏及极具冲击力的仿真人偶/动物装置艺术迅速成为亚洲现象级伴手礼品牌。",
+                storeDetail: "正好开在 Dior 圣水店正对面。地面层刻意只保留了一座历史建筑裸露的钢筋混凝土骨架与枯木花园，没有任何墙体与遮挡；真正的零售空间完全隐藏在地下一层（B1），顾客需顺着旋转楼梯步入地底画廊试香。",
+                diffHighlight: "【与同品牌其他店差异】新沙林荫道店、三清洞店与汉南洞店均为多层地上独栋，唯独圣水店采用“地上极简废墟艺术装置 + 地下沉浸式卖场”的反常规建筑结构，地面层100%让渡给城市公共打卡景观，极具话题侵略性。"
+              }
+            ]
+          }
+        ]
+      },
+
+      ikseon: {
+        id: "ikseon",
+        name: "益善洞",
+        enName: "IKSEON-DONG",
+        status: "MVP 示范",
+        center: [37.5736, 126.9901],
+        zoom: 17,
+        headline: "益善洞：首尔最古老近代韩屋群的“一店一世界”高密改造",
+        retailOverview: "益善洞展示了另一种极致的旧城改造逻辑：在宽度不足2米的迷宫式百年韩屋小巷里，百余家咖啡、烘焙与餐酒馆利用韓屋原有的天井（中庭）加上玻璃顶棚，在30~80㎡的局促面积内做出极具电影感的主题场景。该商圈几乎没有大型商超，核心看点集中在高溢价场景咖啡烘焙。",
+        timeline: [
+          {
+            period: "1920年代 · 平民韩屋村诞生",
+            desc: "由近代房产开发商郑世权先生规划建设，是首尔最早的都市型改良韩屋密集区，旨在为普通市民提供买得起的现代韩屋住宅。"
+          },
+          {
+            period: "2000s–2014 · 拆迁拉锯与停滞",
+            desc: "曾一度被划入高层公寓重建区，因居民补偿与文保争议搁置十余年，街区逐渐老化成寂静的旧城区。"
+          },
+          {
+            period: "2016至今 · 青年商业拯救老韩屋",
+            desc: "随着重建计划取消与青年创业者涌入，主理人们保留韩屋木梁与青瓦，打通内院造景，将益善洞变成首尔坪效与拍照转化率最高的韩屋咖啡烘焙聚落。"
+          }
+        ],
+        categories: [
+          {
+            id: "coffee",
+            name: "咖啡与烘焙旺店（商圈核心支柱）",
+            shortName: "咖啡/烘焙",
+            color: "#059669",
+            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+            isSpecial: false,
+            description: "益善洞没有大型连锁商超，这里所有的商业流量都由“强主题韩屋咖啡+单品烘焙”支撑。不强行塞入普通小店，以下两家是常年排队、最具商业研究价值的头部旺店：",
+            stores: [
+              {
+                num: 1,
+                id: "cheongsudang",
+                nameCn: "清水堂 (Cheongsudang) 益善总店",
+                nameKr: "청수당",
+                nameEn: "Cheongsudang Ikseon",
+                lat: 37.57388,
+                lng: 126.99052,
+                labelDir: "right",
+                address: "首尔钟路区敦化门路11那街 31-9 (서울 종로구 돈화문로11나길 31-9)",
+                tags: ["东方竹林庭院造景", "石槽流水", "舒芙蕾/抹茶拿铁"],
+                brandIntro: "韩国极具代表性的空间场景型咖啡品牌（隶属 Glow Seoul 空间设计集团体系，该团队也是益善洞温泉家、Soha Salt Pond 等多家排队王背后的操盘手）。",
+                storeDetail: "入口处铺设巨石步道、潺潺流水与茂密翠竹灯笼，顾客必须踏着水面石板过桥才能进店。室内将传统韩屋围合院落转化为热带苔藓温室，出品置于方形陶盒中的抹茶提拉米苏、石锅现烤舒芙蕾与滴滤咖啡。",
+                diffHighlight: "【与同品牌其他店差异】清水堂后续在新沙洞、延南洞及海外（含中国市场）开出了水疗风、画廊风等分店，但益善洞总店是其成名起家店，空间纵深感与“窄巷尽头忽见竹林溪流”的戏剧反差感最强。"
+              },
+              {
+                num: 2,
+                id: "mil-toast",
+                nameCn: "Mil Toast (밀토스트) 益善店",
+                nameKr: "밀토스트",
+                nameEn: "Mil Toast House",
+                lat: 37.57322,
+                lng: 126.98968,
+                labelDir: "left",
+                address: "首尔钟路区水标路28街 30-3 (서울 종로구 수표로28길 30-3)",
+                tags: ["竹笼蒸吐司单品王", "全明档吧台", "早C晚A高翻台"],
+                brandIntro: "专注“笼屉现蒸布里欧修吐司”与手冲咖啡的烘焙专门店，将亚洲传统蒸笼工艺与西式黄油吐司结合，开创了蒸吐司细分赛道。",
+                storeDetail: "保留了老韩屋高耸的木结构屋架并引入天窗自然光，一进门即是U型环绕式开放吧台，店员在热气腾腾的竹蒸笼前现蒸栗子吐司、玉米吐司，搭配装在复古玻璃瓶里的黄油杏仁奶。",
+                diffHighlight: "【与同品牌其他店差异】作为品牌唯一核心总店，U型吧台将“蒸笼冒热气”的视觉与香气直接推到街边橱窗，是典型的靠“感官剧场化明档”实现路人高截流率的门店模型。"
+              }
+            ]
+          }
+        ]
+      },
+
+      hannam: {
+        id: "hannam",
+        name: "汉南洞",
+        enName: "HANNAM-DONG",
+        status: "正式版待扩充",
+        center: [37.5365, 127.0012],
+        zoom: 15,
+        headline: "汉南洞：背靠财阀富人区的陡坡设计师街区与买手店聚落",
+        retailOverview: "【MVP 占位预览】汉南洞北靠南山与UN Village顶级富人区，拥有极高密度的独立设计师女装（Mardi Mercredi、emis、Rockfish）、小众沙龙香氛（Nonfiction）与黑胶艺术空间（Hyundai Card Vinyl & Plastic）。在确认当前 MVP 交互框架满意后，将为您完整填入汉南洞全量旺店。",
+        timeline: [
+          {
+            period: "1970s–2000s · 外交使馆与豪宅区",
+            desc: "紧邻梨泰院与驻韩美军基地旧址，大量外国使馆与韩国顶级财阀家族宅邸聚集于此，形成低调高消费力的社区基底。"
+          },
+          {
+            period: "2015至今 · K-Fashion 独立品牌第一街",
+            desc: "沿着梨泰院路北侧斜坡小巷，本土设计师品牌与精品咖啡店（Anthracite、Milestone）密集开出独栋旗舰店，成为客单价与买手采购转化率最高的街区。"
+          }
+        ],
+        categories: [
+          {
+            id: "coffee",
+            name: "咖啡与烘焙旺店（示例预览）",
+            shortName: "咖啡/烘焙",
+            color: "#059669",
+            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+            isSpecial: false,
+            description: "MVP 框架演示节点，正式版将完整扩充汉南洞咖啡、商超与品牌文创全名单。",
+            stores: [
+              {
+                num: 1,
+                id: "anthracite-hannam",
+                nameCn: "Anthracite Coffee 汉南店",
+                nameKr: "앤트러사이트 한남점",
+                nameEn: "Anthracite Coffee Roasters Hannam",
+                lat: 37.53595,
+                lng: 127.00025,
+                labelDir: "right",
+                address: "首尔龙山区梨泰院路 240 (서울 용산구 이태원로 240)",
+                tags: ["韩国精品烘焙鼻祖", "三层通透街角楼", "文学命名豆单"],
+                brandIntro: "韩国第一代精品咖啡烘焙代表品牌，首店由合井洞废弃鞋厂改造而成，以深沉的工业美学和用文学家命名的拼配豆（如夏目漱石、威廉·布莱克）闻名业界。",
+                storeDetail: "位于汉南洞主干道核心街角的三层独栋建筑，一楼为巨型绿植环绕的冲煮吧台与咖啡豆零售架，二三楼拥有极佳的临街落地窗视野。",
+                diffHighlight: "【与同品牌其他店差异】相比合井店阴翳冷峻的废墟工厂感、西桥洞店的日式枯山水静谧院落，汉南店更具现代摩登通透感，且紧邻各大潮牌旗舰店，零售袋装豆与挂耳销量极高。"
+              }
+            ]
+          }
+        ]
+      },
+
+      myeongdong: {
+        id: "myeongdong",
+        name: "明洞",
+        enName: "MYEONG-DONG",
+        status: "正式版待扩充",
+        center: [37.5636, 126.9845],
+        zoom: 16,
+        headline: "明洞：历经百年的首尔第一商业中心与超级旅游零售复苏样本",
+        retailOverview: "【MVP 占位预览】明洞代表了韩国高流量旅游标品零售的极致效率：巨型零食主题超市（BBAF 杏仁乐园）、Olive Young 全球游客总店、以及新世界/乐天百货免税矩阵。确认 MVP 框架后将完整填充明洞标杆旺店。",
+        timeline: [
+          {
+            period: "朝鲜时代至近代 · 钟路以南住宅与明治町商业化",
+            desc: "从早期住宅区逐步演变为近代百货、银行总部与剧院林立的金融商业核心。"
+          },
+          {
+            period: "1990s–2026 · 全球游客消费晴雨表与大店化转型",
+            desc: "经历疫情洗牌后，明洞淘汰了同质化小摊贩，全面转向多国语言自助结账的超级零食商超、IP巨型旗舰店与百年教堂景观咖啡（Molto）。"
+          }
+        ],
+        categories: [
+          {
+            id: "coffee",
+            name: "咖啡与景观旺店（示例预览）",
+            shortName: "咖啡/烘焙",
+            color: "#059669",
+            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+            isSpecial: false,
+            description: "MVP 框架演示节点，正式版将补充明洞商超（HBAF、Olive Young 明洞总店等）与文创旺店。",
+            stores: [
+              {
+                num: 1,
+                id: "molto-myeongdong",
+                nameCn: "Molto 意式浓缩咖啡吧",
+                nameKr: "몰토 이탈리안 에스프레소바",
+                nameEn: "Molto Italian Espresso Bar",
+                lat: 37.56342,
+                lng: 126.98625,
+                labelDir: "left",
+                address: "首尔中区明洞街 73 3楼 (서울 중구 명동길 73 3F)",
+                tags: ["明洞圣堂正对露台", "Espresso Bar风潮代表", "借景天花板"],
+                brandIntro: "推动首尔意式浓缩吧（Espresso Bar）细分赛道破圈的头部品牌，主打站立或露台快饮的花式浓缩与牛角包。",
+                storeDetail: "位于明洞圣堂正对面的Page明洞大厦3楼弧形露台，将百年哥特式红砖教堂全景直接变成门店背景墙，视觉溢价极高。",
+                diffHighlight: "【商业选址启示】证明了在传统高租金旅游老商圈，只要找到不可复制的“城市地标借景位（3楼露台）”，无需一楼天价铺位也能成为全城流量引擎。"
+              }
+            ]
+          }
+        ]
+      },
+
+      hongdae: {
+        id: "hongdae",
+        name: "弘大",
+        enName: "HONGDAE / YEONNAM",
+        status: "正式版待扩充",
+        center: [37.5575, 126.9245],
+        zoom: 15,
+        headline: "弘大与延南洞：艺术学院派街头亚文化与Z世代IP文创试验田",
+        retailOverview: "【MVP 占位预览】以弘益大学美术学院为原点，向北延伸至京义线林荫道与延南洞。这里是韩国文创杂货（Object、Kakao Friends旗舰店）、复古主题咖啡与平价街头服饰周转最快的年轻力商圈。确认 MVP 后将补充完整20店级别清单。",
+        timeline: [
+          {
+            period: "1990s · 独立音乐俱乐部与美术生工作室",
+            desc: "依托弘益大学美院资源，地下乐队、涂鸦与独立出版物在此聚集。"
+          },
+          {
+            period: "2015至今 · 延南洞扩圈与IP文创大型化",
+            desc: "主街趋向大型潮牌与IP旗舰店，而延南洞（Yeonnam-dong）住宅小巷则演化出高密度绘本风、庭院风独立咖啡与插画师杂货店。"
+          }
+        ],
+        categories: [
+          {
+            id: "cultural",
+            name: "品牌文创与杂货旺店（示例预览）",
+            shortName: "品牌文创",
+            color: "#9333ea",
+            badgeBg: "bg-purple-100 text-purple-900 border-purple-300",
+            isSpecial: false,
+            description: "MVP 框架演示节点，正式版将完整展开弘大/延南洞的咖啡、商超与文创矩阵。",
+            stores: [
+              {
+                num: 1,
+                id: "object-seogyo",
+                nameCn: "Object 西桥洞总店",
+                nameKr: "오브젝트 서교점",
+                nameEn: "Object Seogyo Flagship",
+                lat: 37.55582,
+                lng: 126.92968,
+                labelDir: "right",
+                address: "首尔麻浦区卧牛山路35街 13 (서울 마포구 와우산로35길 13)",
+                tags: ["韩国插画文创孵化器", "四层策展空间", "DIY手作联动"],
+                brandIntro: "韩国最具影响力的独立创作者与插画周边平台型文创集合品牌，类似“线下实体版的文创买手市集”，帮助上百个韩国本土小插画师实现商业化变现。",
+                storeDetail: "四层独栋空间，每1~2个月更换一次主题策展，涵盖毛绒挂件、手账贴纸、帆布包 DIY 烫印与独立出版物，年轻女性客群复购率极高。",
+                diffHighlight: "【与同品牌其他店差异】西桥洞店是 Object 规模最大、展陈最完整的四层旗舰总店，相比圣水或釜山分店，这里的首发联名展与创作者签售活动最为密集。"
+              }
+            ]
+          }
+        ]
+      },
+
+      gangnam: {
+        id: "gangnam",
+        name: "江南",
+        enName: "GANGNAM / DOSAN",
+        status: "正式版待扩充",
+        center: [37.5242, 127.0365],
+        zoom: 15,
+        headline: "江南（岛山公园/新沙）：汉江以南财富高地与高奢旗舰店丛林",
+        retailOverview: "【MVP 占位预览】以岛山公园（Dosan Park）与新沙洞林荫道为核心，聚集了 Gentle Monster 的五层艺术实验场 Haus Dosan（含 Nudake 艺术甜点）、伦敦贝果博物馆岛山店以及各大国际大牌建筑级旗舰店。确认 MVP 后将补充完整清单。",
+        timeline: [
+          {
+            period: "1970s–1980s · 永东开发计划与精英南迁",
+            desc: "首尔政府推动汉江南岸开发，名校学区与现代企业总部南迁，奠定高净值消费人群基础。"
+          },
+          {
+            period: "2020至今 · 岛山公园取代传统林荫道成为潮奢核心",
+            desc: "商业重心从新沙洞主街向岛山公园周边的静谧街区转移，诞生了以 Haus Dosan 为代表的多品牌复合实验大楼。"
+          }
+        ],
+        categories: [
+          {
+            id: "coffee",
+            name: "咖啡与艺术烘焙旺店（示例预览）",
+            shortName: "咖啡/烘焙",
+            color: "#059669",
+            badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300",
+            isSpecial: false,
+            description: "MVP 框架演示节点，正式版将完整展开江南商圈。",
+            stores: [
+              {
+                num: 1,
+                id: "nudake-dosan",
+                nameCn: "NUDAKE 岛山旗舰店 (Haus Dosan)",
+                nameKr: "누데이크 하우스도산",
+                nameEn: "NUDAKE Haus Dosan",
+                lat: 37.52538,
+                lng: 127.03568,
+                labelDir: "right",
+                address: "首尔江南区狎鸥亭路46街 50 B1 (서울 강남구 압구정로46길 50 B1)",
+                tags: ["先锋艺术甜点", "抹茶熔岩羊角Peak", "展览式点单模式"],
+                brandIntro: "Gentle Monster 母公司 IICOMBINED 旗下的跨界艺术甜点与咖啡品牌（名称源自 New + Different + Cake），将雕塑艺术与烘焙结合。",
+                storeDetail: "位于 Haus Dosan 大楼地下一层。店内不设常规冰柜，而是将每一款甜点像美术馆雕塑一样摆在黑色长桌上并配以说明牌，顾客拿取条形码小票去吧台结账取餐。",
+                diffHighlight: "【与同品牌其他店差异】圣水店以“巨型微观餐厅”为主题，新沙店主打“牛角包怪兽主题”，而岛山店位于集团总部级复合楼 Haus Dosan 内（楼上即 Gentle Monster 与 Tamburins），是唯一能一次性完整考察该集团“眼镜+香氛+甜点”三大业态协同动线的门店。"
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    // ============================================================================
+    // 【交互状态与地图控制逻辑】
+    // ============================================================================
+    let currentDistrictId = "seongsu";
+    let currentCategoryFilter = "all";
+    let showPermanentLabels = true;
+    let isHistoryExpanded = true;
+    let activeStoreId = null;
+
+    let mapInstance = null;
+    let markerLayerGroup = null;
+    const storeMarkersMap = {}; // id -> { marker, store }
+
+    function initApp() {
+      initLeafletMap();
+      renderDistrictTabs();
+      loadDistrict(currentDistrictId);
+      bindGlobalEvents();
+    }
+
+    function initLeafletMap() {
+      const initialDistrict = SEOUL_GUIDE_DATA[currentDistrictId];
+      mapInstance = L.map("seoulMap", {
+        zoomControl: false,
+        attributionControl: true
+      }).setView(initialDistrict.center, initialDistrict.zoom);
+
+      // Clean CartoDB Positron light basemap so store labels pop clearly
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: "abcd",
+        maxZoom: 19
+      }).addTo(mapInstance);
+
+      L.control.zoom({ position: "bottomright" }).addTo(mapInstance);
+      markerLayerGroup = L.layerGroup().addTo(mapInstance);
+    }
+
+    function renderDistrictTabs() {
+      const container = document.getElementById("districtTabs");
+      container.innerHTML = "";
+
+      Object.values(SEOUL_GUIDE_DATA).forEach((district) => {
+        const isActive = district.id === currentDistrictId;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = isActive
+          ? "shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold bg-stone-900 text-white shadow-xs flex items-center space-x-1 transition"
+          : "shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium bg-white text-stone-600 border border-stone-200/80 hover:bg-stone-100 flex items-center space-x-1 transition";
+
+        const badgeDot = district.id === "seongsu" || district.id === "ikseon"
+          ? `<span class="w-1.5 h-1.5 rounded-full ${isActive ? 'bg-amber-400' : 'bg-emerald-500'}"></span>`
+          : "";
+
+        btn.innerHTML = `${badgeDot}<span>${district.name}</span>`;
+        btn.addEventListener("click", () => {
+          if (currentDistrictId !== district.id) {
+            currentDistrictId = district.id;
+            currentCategoryFilter = "all";
+            activeStoreId = null;
+            renderDistrictTabs();
+            loadDistrict(currentDistrictId);
+          }
+        });
+        container.appendChild(btn);
+      });
+    }
+
+    function loadDistrict(districtId) {
+      const district = SEOUL_GUIDE_DATA[districtId];
+      if (!district) return;
+
+      // Update Map header count
+      const totalStores = district.categories.reduce((acc, cat) => acc + cat.stores.length, 0);
+      document.getElementById("mapHeaderTitle").textContent = `${district.name} · ${totalStores}家标杆旺店同屏标注`;
+
+      // Update History Accordion
+      document.getElementById("districtSubtitle").textContent = `${district.enName} · 商圈演进脉络 (${district.status})`;
+      document.getElementById("districtTitle").textContent = district.headline;
+
+      const historyBody = document.getElementById("historyAccordionBody");
+      const timelineHtml = district.timeline.map((item) => `
+        <div class="relative pl-3.5 border-l-2 border-stone-300">
+          <div class="text-[11px] font-bold text-stone-900">${item.period}</div>
+          <p class="text-xs text-stone-600 mt-0.5 leading-relaxed">${item.desc}</p>
+        </div>
+      `).join("");
+
+      historyBody.innerHTML = `
+        <div class="p-2.5 rounded-xl bg-stone-100/90 border border-stone-200/70 text-stone-800 text-xs leading-relaxed">
+          <span class="font-bold text-stone-900">【行业洞察】</span>${district.retailOverview}
+        </div>
+        <div class="space-y-2.5 pt-1">
+          ${timelineHtml}
+        </div>
+      `;
+
+      renderCategoryFilters(district);
+      renderSubCategoryJumpBar(district);
+      renderStoreSections(district);
+      renderMapMarkers(district);
+    }
+
+    function renderCategoryFilters(district) {
+      const filterBar = document.getElementById("categoryFilterBar");
+      filterBar.innerHTML = "";
+
+      const allCount = district.categories.reduce((sum, c) => sum + c.stores.length, 0);
+      const pills = [
+        { id: "all", label: `全部点位 (${allCount})`, color: "#1c1917" },
+        ...district.categories.map((c) => ({
+          id: c.id,
+          label: `${c.shortName} (${c.stores.length})`,
+          color: c.color
+        }))
+      ];
+
+      pills.forEach((pill) => {
+        const active = currentCategoryFilter === pill.id;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = active
+          ? "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-stone-900 text-white shadow-2xs transition"
+          : "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white text-stone-600 border border-stone-200 hover:bg-stone-100 transition";
+        btn.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full mr-1" style="background:${pill.color}"></span>${pill.label}`;
+        btn.addEventListener("click", () => {
+          currentCategoryFilter = pill.id;
+          renderCategoryFilters(district);
+          renderMapMarkers(district);
+          renderStoreSections(district);
+        });
+        filterBar.appendChild(btn);
+      });
+    }
+
+    function renderSubCategoryJumpBar(district) {
+      const jumpBar = document.getElementById("subCategoryJumpBar");
+      jumpBar.innerHTML = "";
+
+      const labelEl = document.createElement("span");
+      labelEl.className = "text-[11px] font-semibold text-stone-400 shrink-0 pl-0.5";
+      labelEl.textContent = "二级目录跳转:";
+      jumpBar.appendChild(labelEl);
+
+      district.categories.forEach((cat) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white border border-stone-200/90 text-stone-700 shadow-2xs active:bg-stone-100 transition";
+        btn.textContent = `${cat.isSpecial ? "★ " : ""}${cat.shortName}`;
+        btn.addEventListener("click", () => {
+          if (currentCategoryFilter !== "all" && currentCategoryFilter !== cat.id) {
+            currentCategoryFilter = "all";
+            renderCategoryFilters(district);
+            renderMapMarkers(district);
+            renderStoreSections(district);
+          }
+          const targetEl = document.getElementById(`cat-section-${cat.id}`);
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+        jumpBar.appendChild(btn);
+      });
+    }
+
+    function renderMapMarkers(district) {
+      markerLayerGroup.clearLayers();
+      Object.keys(storeMarkersMap).forEach((k) => delete storeMarkersMap[k]);
+
+      const boundsPoints = [];
+
+      district.categories.forEach((cat) => {
+        if (currentCategoryFilter !== "all" && currentCategoryFilter !== cat.id) return;
+
+        cat.stores.forEach((store) => {
+          boundsPoints.push([store.lat, store.lng]);
+
+          const isSelected = activeStoreId === store.id;
+          const iconHtml = `<div id="pin-${store.id}" class="custom-pin ${isSelected ? 'active-pin' : ''}" style="background-color: ${cat.color};">${store.num}</div>`;
+
+          const customIcon = L.divIcon({
+            className: "custom-div-icon",
+            html: iconHtml,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          });
+
+          const marker = L.marker([store.lat, store.lng], { icon: customIcon });
+
+          if (showPermanentLabels) {
+            const offsetMap = {
+              right: [14, 0],
+              left: [-14, 0],
+              top: [0, -14],
+              bottom: [0, 14]
+            };
+            const dir = store.labelDir || "right";
+            marker.bindTooltip(`${store.num}. ${store.nameCn}`, {
+              permanent: true,
+              direction: dir,
+              offset: offsetMap[dir] || [12, 0],
+              className: `store-map-label ${isSelected ? "active-label" : ""}`
+            });
+          }
+
+          marker.on("click", () => {
+            highlightAndScrollToStore(store.id, true);
+          });
+
+          marker.addTo(markerLayerGroup);
+          storeMarkersMap[store.id] = { marker, store, category: cat };
+        });
+      });
+
+      if (boundsPoints.length > 1) {
+        mapInstance.fitBounds(boundsPoints, { padding: [36, 36], maxZoom: 17 });
+      } else if (boundsPoints.length === 1) {
+        mapInstance.setView(boundsPoints[0], 16);
+      } else {
+        mapInstance.setView(district.center, district.zoom);
+      }
+    }
+
+    function renderStoreSections(district) {
+      const container = document.getElementById("categoriesContainer");
+      container.innerHTML = "";
+
+      district.categories.forEach((cat) => {
+        if (currentCategoryFilter !== "all" && currentCategoryFilter !== cat.id) return;
+
+        const section = document.createElement("section");
+        section.id = `cat-section-${cat.id}`;
+        section.className = "bg-white rounded-2xl border border-stone-200/90 shadow-sm overflow-hidden scroll-mt-28";
+
+        // Category Header (Collapsible)
+        const headerBtn = document.createElement("button");
+        headerBtn.type = "button";
+        headerBtn.className = "w-full px-4 py-3 bg-stone-50/90 border-b border-stone-200/70 flex items-center justify-between text-left";
+        headerBtn.innerHTML = `
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${cat.color}"></span>
+            <div>
+              <div class="flex items-center space-x-1.5">
+                <h3 class="text-sm font-bold text-stone-900">${cat.name}</h3>
+                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border ${cat.badgeBg}">${cat.stores.length} 店</span>
+              </div>
+              <p class="text-[11px] text-stone-500 mt-0.5">${cat.description}</p>
+            </div>
+          </div>
+          <span class="text-xs text-stone-400 shrink-0 ml-2" data-cat-chevron="${cat.id}">收起 ▲</span>
+        `;
+
+        const cardsWrapper = document.createElement("div");
+        cardsWrapper.id = `cat-body-${cat.id}`;
+        cardsWrapper.className = "divide-y divide-stone-100";
+
+        headerBtn.addEventListener("click", () => {
+          const isHidden = cardsWrapper.classList.toggle("hidden");
+          const chevron = headerBtn.querySelector(`[data-cat-chevron="${cat.id}"]`);
+          if (chevron) chevron.textContent = isHidden ? "展开 ▼" : "收起 ▲";
+        });
+
+        cat.stores.forEach((store) => {
+          const card = document.createElement("article");
+          card.id = `store-card-${store.id}`;
+          card.className = "p-4 space-y-3 transition-colors duration-300";
+
+          const tagsHtml = store.tags.map((t) =>
+            `<span class="text-[10px] font-medium px-2 py-0.5 rounded-md bg-stone-100 text-stone-700">${t}</span>`
+          ).join("");
+
+          card.innerHTML = `
+            <!-- Store Title & Map Locate Trigger -->
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-start space-x-2.5">
+                <span class="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 shadow-2xs" style="background:${cat.color}">
+                  ${store.num}
+                </span>
+                <div>
+                  <h4 class="text-sm font-bold text-stone-900 leading-snug">${store.nameCn}</h4>
+                  <div class="text-xs font-medium text-stone-500 mt-0.5">${store.nameKr} · ${store.nameEn}</div>
+                </div>
+              </div>
+              <button type="button" data-locate-store="${store.id}" class="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-stone-100 text-stone-800 hover:bg-stone-200 active:scale-95 transition">
+                地图定位 ↑
+              </button>
+            </div>
+
+            <!-- Tags -->
+            <div class="flex flex-wrap gap-1.5">
+              ${tagsHtml}
+            </div>
+
+            <!-- Structured 3-Part Retail Breakdown -->
+            <div class="space-y-2 text-xs leading-relaxed">
+              <div class="p-2.5 rounded-xl bg-stone-50 border border-stone-200/60">
+                <span class="font-bold text-stone-900">① 品牌背景：</span>
+                <span class="text-stone-700">${store.brandIntro}</span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-stone-50 border border-stone-200/60">
+                <span class="font-bold text-stone-900">② 单店实况：</span>
+                <span class="text-stone-700">${store.storeDetail}</span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/80">
+                <span class="font-bold text-amber-950">③ 同品牌差异化亮点：</span>
+                <span class="text-amber-900">${store.diffHighlight}</span>
+              </div>
+            </div>
+
+            <!-- Address & One-Tap Copy Name Bar -->
+            <div class="pt-1 flex flex-col gap-2">
+              <div class="text-[11px] text-stone-500 truncate">
+                📍 地址：${store.address}
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <button type="button" data-copy-text="${store.nameKr}" class="flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl bg-stone-900 text-white text-xs font-semibold active:scale-98 hover:bg-stone-800 transition shadow-2xs">
+                  <span>📋 复制韩文店名</span>
+                </button>
+                <button type="button" data-copy-text="${store.nameEn}" class="flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl bg-white border border-stone-300 text-stone-800 text-xs font-semibold active:scale-98 hover:bg-stone-50 transition">
+                  <span>📋 复制英文店名</span>
+                </button>
+              </div>
+            </div>
+          `;
+
+          cardsWrapper.appendChild(card);
+        });
+
+        section.appendChild(headerBtn);
+        section.appendChild(cardsWrapper);
+        container.appendChild(section);
+      });
+    }
+
+    function highlightAndScrollToStore(storeId, scrollCardIntoView) {
+      activeStoreId = storeId;
+      const entry = storeMarkersMap[storeId];
+      if (!entry) return;
+
+      // Center map smoothly on selected store
+      mapInstance.setView([entry.store.lat, entry.store.lng], 17, { animate: true });
+
+      // Update visual highlight on pins & tooltips
+      Object.keys(storeMarkersMap).forEach((id) => {
+        const pinEl = document.getElementById(`pin-${id}`);
+        if (pinEl) {
+          if (id === storeId) pinEl.classList.add("active-pin");
+          else pinEl.classList.remove("active-pin");
+        }
+        const m = storeMarkersMap[id].marker;
+        const tooltip = m.getTooltip();
+        if (tooltip && tooltip.getElement()) {
+          if (id === storeId) tooltip.getElement().classList.add("active-label");
+          else tooltip.getElement().classList.remove("active-label");
+        }
+      });
+
+      // Highlight card
+      document.querySelectorAll("[id^='store-card-']").forEach((el) => {
+        el.classList.remove("bg-amber-50/60", "ring-2", "ring-amber-400");
+      });
+
+      const targetCard = document.getElementById(`store-card-${storeId}`);
+      if (targetCard) {
+        // Ensure parent category is expanded
+        const parentWrapper = targetCard.parentElement;
+        if (parentWrapper && parentWrapper.classList.contains("hidden")) {
+          parentWrapper.classList.remove("hidden");
+        }
+        targetCard.classList.add("bg-amber-50/60", "ring-2", "ring-amber-400");
+        if (scrollCardIntoView) {
+          targetCard.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    }
+
+    function copyTextToClipboard(text) {
+      const showSuccess = () => {
+        const toast = document.getElementById("copyToast");
+        const toastText = document.getElementById("copyToastText");
+        toastText.textContent = `已复制「${text}」，可直接粘贴至地图搜店`;
+        toast.classList.remove("opacity-0", "translate-y-2");
+        toast.classList.add("opacity-100", "translate-y-0");
+        clearTimeout(window.__copyTimer);
+        window.__copyTimer = setTimeout(() => {
+          toast.classList.remove("opacity-100", "translate-y-0");
+          toast.classList.add("opacity-0", "translate-y-2");
+        }, 2200);
+      };
+
+      const fallbackCopy = (val) => {
+        const ta = document.createElement("textarea");
+        ta.value = val;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+          document.execCommand("copy");
+        } catch (err) {}
+        document.body.removeChild(ta);
+        showSuccess();
+      };
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(showSuccess).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    function bindGlobalEvents() {
+      // Toggle permanent store name labels on map
+      const toggleLabelsBtn = document.getElementById("toggleLabelsBtn");
+      toggleLabelsBtn.addEventListener("click", () => {
+        showPermanentLabels = !showPermanentLabels;
+        toggleLabelsBtn.textContent = showPermanentLabels ? "隐藏店名" : "显示店名";
+        loadDistrict(currentDistrictId);
+      });
+
+      // Reset map bounds
+      document.getElementById("resetMapBtn").addEventListener("click", () => {
+        activeStoreId = null;
+        renderMapMarkers(SEOUL_GUIDE_DATA[currentDistrictId]);
+      });
+
+      // History Accordion toggle
+      document.getElementById("historyAccordionBtn").addEventListener("click", () => {
+        isHistoryExpanded = !isHistoryExpanded;
+        const body = document.getElementById("historyAccordionBody");
+        const icon = document.getElementById("historyAccordionIcon");
+        body.classList.toggle("hidden", !isHistoryExpanded);
+        icon.textContent = isHistoryExpanded ? "收起 ▲" : "展开 ▼";
+      });
+
+      // Delegate clicks for copy buttons, map locate buttons, and map tooltips
+      document.body.addEventListener("click", (e) => {
+        const copyBtn = e.target.closest("[data-copy-text]");
+        if (copyBtn) {
+          const text = copyBtn.getAttribute("data-copy-text");
+          if (text) copyTextToClipboard(text);
+          return;
+        }
+
+        const locateBtn = e.target.closest("[data-locate-store]");
+        if (locateBtn) {
+          const storeId = locateBtn.getAttribute("data-locate-store");
+          if (storeId) {
+            document.getElementById("seoulMap").scrollIntoView({ behavior: "smooth", block: "center" });
+            highlightAndScrollToStore(storeId, false);
+          }
+          return;
+        }
+      });
+
+      // Guide Modal
+      const modal = document.getElementById("guideModal");
+      document.getElementById("toggleGuideBtn").addEventListener("click", () => {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+      });
+      document.getElementById("closeGuideBtn").addEventListener("click", () => {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      });
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) {
+          modal.classList.add("hidden");
+          modal.classList.remove("flex");
+        }
+      });
+    }
+
+    window.addEventListener("DOMContentLoaded", initApp);
+  </script>
+</body>
+</html>
