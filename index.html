@@ -6,6 +6,8 @@
   <title>首尔商业巡店推荐</title>
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <!-- Leaflet SDK (loaded via fast global CDN; Kakao Maps SDK is loaded asynchronously with timeout protection) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body {
@@ -42,6 +44,12 @@
       border-color: #f59e0b !important;
       transform: scale(1.08);
       z-index: 9999 !important;
+    }
+    .leaflet-tooltip-top:before,
+    .leaflet-tooltip-bottom:before,
+    .leaflet-tooltip-left:before,
+    .leaflet-tooltip-right:before {
+      display: none;
     }
     .custom-pin {
       display: flex;
@@ -142,6 +150,12 @@
           <h2 class="text-xs font-bold text-stone-800 truncate" id="mapHeaderTitle">明洞</h2>
         </div>
         <div class="flex items-center space-x-1 shrink-0">
+          <button id="switchEngineBtn" type="button" class="text-[11px] font-medium px-2 py-1 rounded bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100 transition">
+            切换Kakao底图
+          </button>
+          <button id="switchBasemapBtn" type="button" class="text-[11px] font-medium px-2 py-1 rounded bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition">
+            底图: 极简街景
+          </button>
           <button id="toggleLabelsBtn" type="button" class="text-[11px] font-medium px-2 py-1 rounded bg-stone-100 text-stone-700 hover:bg-stone-200 transition">
             隐藏店名
           </button>
@@ -207,7 +221,7 @@
         <button id="closeGuideBtn" type="button" class="text-xs text-stone-500 hover:text-stone-900 px-2 py-0.5 rounded bg-stone-100">关闭</button>
       </div>
       <div class="text-xs text-stone-600 space-y-2 leading-relaxed">
-        <p><strong class="text-stone-900">制作原理：</strong>单文件架构（Single-File HTML），由 <code class="bg-stone-100 px-1 rounded">Tailwind</code> 排版 + <code class="bg-stone-100 px-1 rounded">Kakao 底图 + 内置离线地图容灾 + 顶部 <code class="bg-stone-100 px-1 rounded">SEOUL_GUIDE_DATA</code> 数据驱动渲染。</p>
+        <p><strong class="text-stone-900">制作原理：</strong>单文件架构（Single-File HTML），由 <code class="bg-stone-100 px-1 rounded">Tailwind</code> 排版 + <code class="bg-stone-100 px-1 rounded">Kakao/Leaflet/离线矢量</code> 三级容灾地图 + 顶部 <code class="bg-stone-100 px-1 rounded">SEOUL_GUIDE_DATA</code> 数据驱动渲染。</p>
         <p><strong class="text-stone-900">维护必要环节：</strong><br/>
         1. <strong>改内容/加店：</strong>搜索 <code class="bg-stone-100 px-1 rounded">SEOUL_GUIDE_DATA</code>，按格式修改文案、经纬度（<code class="bg-stone-100 px-1 rounded">lat/lng</code>）与序号（<code class="bg-stone-100 px-1 rounded">num</code>）。<br/>
         2. <strong>防标签重叠：</strong>修改单店的 <code class="bg-stone-100 px-1 rounded">labelDir</code>（<code class="bg-stone-100 px-1 rounded">top/bottom/left/right</code>）。<br/>
@@ -3780,9 +3794,46 @@
     let kakaoMapInstance = null;
     let kakaoOverlays = [];
 
+    let leafletMapInstance = null;
+    let leafletTileLayer = null;
+    let currentBasemapStyle = "clean_osm";
+    let leafletMarkerGroup = null;
+
     const storeMarkersMap = {};
 
+    const BASEMAP_CONFIGS = {
+      clean_osm: {
+        name: "底图: 极简街景",
+        kakaoType: "ROADMAP_CLEAN",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          attribution: 'Tiles &copy; Esri',
+          maxZoom: 19,
+          className: "clean-osm-tiles"
+        }
+      },
+      standard_osm: {
+        name: "底图: 全彩街道",
+        kakaoType: "ROADMAP",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          attribution: 'Tiles &copy; Esri',
+          maxZoom: 19
+        }
+      },
+      hot_osm: {
+        name: "底图: 卫星/混成",
+        kakaoType: "HYBRID",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          attribution: 'Tiles &copy; Esri',
+          maxZoom: 19
+        }
+      }
+    };
+
     const KAKAO_JS_KEY = "a83b5b1a2e4c83f703f97e2239caefb1";
+    let kakaoScriptLoaded = false;
     let svgZoomScale = 1;
     let svgPanX = 0;
     let svgPanY = 0;
@@ -3830,61 +3881,72 @@
     function initApp() {
       renderDistrictTabs();
       bindGlobalEvents();
-      // 先显示内置离线地图，保证断网或 Kakao 加载失败时地图区域始终有内容。
-      initOfflineVectorMap();
-      tryActivateKakaoEngine();
+      initSmartMapEngine();
+    }
+
+    function initSmartMapEngine() {
+      // If Leaflet CDN loaded and browser is online, start with Leaflet + automatic Offline Vector fallback if tiles fail
+      if (typeof window.L !== "undefined" && navigator.onLine !== false) {
+        initLeafletFallback();
+      } else {
+        // Offline or CDN blocked: immediately render built-in Offline Vector Base Map (never a gray box!)
+        initOfflineVectorMap();
+      }
     }
 
     function initOfflineVectorMap() {
       activeMapEngine = "offline_svg";
       kakaoMapInstance = null;
-      kakaoOverlays = [];
+      if (leafletMapInstance) {
+        try { leafletMapInstance.remove(); } catch (e) {}
+        leafletMapInstance = null;
+      }
+      const engineBtn = document.getElementById("switchEngineBtn");
+      if (engineBtn) engineBtn.textContent = "切换在线街景";
       loadDistrict(currentDistrictId);
     }
 
     function tryActivateKakaoEngine() {
-      let settled = false;
-      const fallback = () => {
-        if (settled) return;
-        settled = true;
-        initOfflineVectorMap();
-      };
-      const timeout = setTimeout(fallback, 5000);
+      const engineBtn = document.getElementById("switchEngineBtn");
+      if (engineBtn) engineBtn.textContent = "加载Kakao中...";
 
       const mountKakao = () => {
-        if (settled || !window.kakao || !window.kakao.maps || typeof window.kakao.maps.load !== "function") return fallback();
         try {
           window.kakao.maps.load(() => {
-            if (settled) return;
-            try {
-              const container = document.getElementById("seoulMap");
-              const d = SEOUL_GUIDE_DATA[currentDistrictId];
-              container.innerHTML = "";
-              kakaoMapInstance = new window.kakao.maps.Map(container, {
-                center: new window.kakao.maps.LatLng(d.center[0], d.center[1]),
-                level: d.kakaoLevel || 4
-              });
-              kakaoMapInstance.addControl(new window.kakao.maps.ZoomControl(), window.kakao.maps.ControlPosition.RIGHT);
-              activeMapEngine = "kakao";
-              settled = true;
-              clearTimeout(timeout);
-              loadDistrict(currentDistrictId);
-              // SDK 可用但底图瓦片请求失败时，也回到内置离线地图。
-              setTimeout(() => {
-                if (activeMapEngine !== "kakao") return;
-                const hasLoadedTile = Array.from(container.querySelectorAll("img"))
-                  .some((img) => img.complete && img.naturalWidth > 0);
-                if (!hasLoadedTile) {
-                  settled = false;
-                  fallback();
-                }
-              }, 3000);
-            } catch (e) {
-              fallback();
+            const container = document.getElementById("seoulMap");
+            if (leafletMapInstance) {
+              try { leafletMapInstance.remove(); } catch (e) {}
+              leafletMapInstance = null;
+              leafletMarkerGroup = null;
             }
+            container.innerHTML = "";
+            const d = SEOUL_GUIDE_DATA[currentDistrictId];
+            const options = {
+              center: new window.kakao.maps.LatLng(d.center[0], d.center[1]),
+              level: d.kakaoLevel || 4
+            };
+            kakaoMapInstance = new window.kakao.maps.Map(container, options);
+            const zoomControl = new window.kakao.maps.ZoomControl();
+            kakaoMapInstance.addControl(zoomControl, window.kakao.maps.ControlPosition.RIGHT);
+
+            activeMapEngine = "kakao";
+            if (engineBtn) engineBtn.textContent = "切回基础地图";
+            applyBasemap(currentBasemapStyle);
+            loadDistrict(currentDistrictId);
+
+            // Check after 900ms if Kakao actually rendered map tiles; if blocked or offline, fall back to guaranteed base map
+            setTimeout(() => {
+              const hasTiles = container.querySelector("canvas") || container.querySelector("img");
+              if (!hasTiles) {
+                copyTextToClipboard("Kakao请求未响应，已为您自动切换至内置基础地图");
+                if (typeof window.L !== "undefined") initLeafletFallback();
+                else initOfflineVectorMap();
+              }
+            }, 900);
           });
         } catch (e) {
-          fallback();
+          if (typeof window.L !== "undefined") initLeafletFallback();
+          else initOfflineVectorMap();
         }
       };
 
@@ -3892,12 +3954,97 @@
         mountKakao();
         return;
       }
+
       const script = document.createElement("script");
       script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false`;
       script.async = true;
-      script.onload = mountKakao;
-      script.onerror = fallback;
+      const timer = setTimeout(() => {
+        if (activeMapEngine !== "kakao") {
+          copyTextToClipboard("Kakao连接超时，已为您保留基础地图");
+          if (engineBtn) engineBtn.textContent = "切换Kakao底图";
+          if (activeMapEngine !== "leaflet" && activeMapEngine !== "offline_svg") {
+            initOfflineVectorMap();
+          }
+        }
+      }, 3000);
+
+      script.onload = () => {
+        clearTimeout(timer);
+        kakaoScriptLoaded = true;
+        mountKakao();
+      };
+      script.onerror = () => {
+        clearTimeout(timer);
+        copyTextToClipboard("Kakao未授权或无网络，已自动使用基础地图");
+        if (typeof window.L !== "undefined") initLeafletFallback();
+        else initOfflineVectorMap();
+      };
       document.head.appendChild(script);
+    }
+
+    function initLeafletFallback() {
+      if (typeof window.L === "undefined") {
+        initOfflineVectorMap();
+        return;
+      }
+      activeMapEngine = "leaflet";
+      kakaoMapInstance = null;
+      kakaoOverlays = [];
+      const engineBtn = document.getElementById("switchEngineBtn");
+      if (engineBtn) engineBtn.textContent = "切换Kakao底图";
+
+      const container = document.getElementById("seoulMap");
+      if (leafletMapInstance) {
+        try { leafletMapInstance.remove(); } catch (e) {}
+        leafletMapInstance = null;
+      }
+      container.innerHTML = "";
+      container.style.filter = "none";
+      const initialDistrict = SEOUL_GUIDE_DATA[currentDistrictId];
+      leafletMapInstance = L.map("seoulMap", {
+        zoomControl: false,
+        attributionControl: true
+      }).setView(initialDistrict.center, initialDistrict.zoom);
+
+      applyBasemap(currentBasemapStyle);
+      L.control.zoom({ position: "bottomright" }).addTo(leafletMapInstance);
+      leafletMarkerGroup = L.layerGroup().addTo(leafletMapInstance);
+
+      loadDistrict(currentDistrictId);
+    }
+
+    function applyBasemap(styleKey) {
+      const cfg = BASEMAP_CONFIGS[styleKey] || BASEMAP_CONFIGS.clean_osm;
+      const btn = document.getElementById("switchBasemapBtn");
+      if (btn) btn.textContent = cfg.name;
+
+      const mapEl = document.getElementById("seoulMap");
+      if (activeMapEngine === "kakao" && kakaoMapInstance) {
+        if (cfg.kakaoType === "HYBRID") {
+          kakaoMapInstance.setMapTypeId(window.kakao.maps.MapTypeId.HYBRID);
+          mapEl.style.filter = "none";
+        } else if (cfg.kakaoType === "ROADMAP_CLEAN") {
+          kakaoMapInstance.setMapTypeId(window.kakao.maps.MapTypeId.ROADMAP);
+          mapEl.style.filter = "saturate(0.65) contrast(0.98)";
+        } else {
+          kakaoMapInstance.setMapTypeId(window.kakao.maps.MapTypeId.ROADMAP);
+          mapEl.style.filter = "none";
+        }
+      } else if (activeMapEngine === "leaflet" && leafletMapInstance) {
+        if (leafletTileLayer) {
+          leafletMapInstance.removeLayer(leafletTileLayer);
+        }
+        let tileErrCount = 0;
+        leafletTileLayer = L.tileLayer(cfg.url, cfg.options);
+        leafletTileLayer.on("tileerror", () => {
+          tileErrCount++;
+          // If 4+ tiles fail due to offline/firewall, automatically switch to built-in Offline Vector Map so user never sees blank gray squares
+          if (tileErrCount >= 4 && activeMapEngine === "leaflet") {
+            initOfflineVectorMap();
+          }
+        });
+        leafletTileLayer.addTo(leafletMapInstance);
+      }
     }
 
     function renderDistrictTabs() {
@@ -4093,6 +4240,62 @@
         } else {
           kakaoMapInstance.setCenter(new window.kakao.maps.LatLng(district.center[0], district.center[1]));
           kakaoMapInstance.setLevel(district.kakaoLevel || 4);
+        }
+        return;
+      }
+
+      if (activeMapEngine === "leaflet" && leafletMapInstance && leafletMarkerGroup) {
+        leafletMarkerGroup.clearLayers();
+        const boundsPoints = [];
+
+        orderedCats.forEach((cat) => {
+          if (currentCategoryFilter !== "all" && currentCategoryFilter !== cat.id) return;
+
+          cat.stores.forEach((store) => {
+            boundsPoints.push([store.lat, store.lng]);
+            const isSelected = activeStoreId === store.id;
+            const iconHtml = `<div id="pin-${store.id}" class="custom-pin ${isSelected ? 'active-pin' : ''}" style="background-color: ${cat.color};">${store.num}</div>`;
+
+            const customIcon = L.divIcon({
+              className: "custom-div-icon",
+              html: iconHtml,
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
+            });
+
+            const marker = L.marker([store.lat, store.lng], { icon: customIcon });
+
+            if (showPermanentLabels) {
+              const offsetMap = {
+                right: [14, 0],
+                left: [-14, 0],
+                top: [0, -14],
+                bottom: [0, 14]
+              };
+              const dir = store.labelDir || "right";
+              marker.bindTooltip(`${store.num}. ${store.nameCn}`, {
+                permanent: true,
+                direction: dir,
+                offset: offsetMap[dir] || [12, 0],
+                className: `store-map-label ${isSelected ? "active-label" : ""}`
+              });
+            }
+
+            marker.on("click", () => {
+              highlightAndScrollToStore(store.id, true);
+            });
+
+            marker.addTo(leafletMarkerGroup);
+            storeMarkersMap[store.id] = { marker, store, category: cat };
+          });
+        });
+
+        if (boundsPoints.length > 1) {
+          leafletMapInstance.fitBounds(boundsPoints, { padding: [36, 36], maxZoom: 17 });
+        } else if (boundsPoints.length === 1) {
+          leafletMapInstance.setView(boundsPoints[0], 16);
+        } else {
+          leafletMapInstance.setView(district.center, district.zoom);
         }
         return;
       }
@@ -4392,6 +4595,16 @@
             item.overlay.setZIndex(id === storeId ? 9999 : item.store.num);
           }
         });
+      } else if (activeMapEngine === "leaflet" && leafletMapInstance) {
+        leafletMapInstance.setView([entry.store.lat, entry.store.lng], 17, { animate: true });
+        Object.keys(storeMarkersMap).forEach((id) => {
+          const pinEl = document.getElementById(`pin-${id}`);
+          if (pinEl) pinEl.classList.toggle("active-pin", id === storeId);
+          const m = storeMarkersMap[id].marker;
+          if (m && m.getTooltip() && m.getTooltip().getElement()) {
+            m.getTooltip().getElement().classList.toggle("active-label", id === storeId);
+          }
+        });
       } else if (activeMapEngine === "offline_svg") {
         Object.keys(storeMarkersMap).forEach((id) => {
           const pinEl = document.getElementById(`pin-${id}`);
@@ -4455,6 +4668,28 @@
     }
 
     function bindGlobalEvents() {
+      const switchEngineBtn = document.getElementById("switchEngineBtn");
+      if (switchEngineBtn) {
+        switchEngineBtn.addEventListener("click", () => {
+          if (activeMapEngine === "leaflet") {
+            tryActivateKakaoEngine();
+          } else if (activeMapEngine === "kakao") {
+            initOfflineVectorMap();
+          } else {
+            if (typeof window.L !== "undefined") initLeafletFallback();
+            else tryActivateKakaoEngine();
+          }
+        });
+      }
+
+      const switchBasemapBtn = document.getElementById("switchBasemapBtn");
+      switchBasemapBtn.addEventListener("click", () => {
+        const order = ["clean_osm", "standard_osm", "hot_osm"];
+        const nextIdx = (order.indexOf(currentBasemapStyle) + 1) % order.length;
+        currentBasemapStyle = order[nextIdx];
+        applyBasemap(currentBasemapStyle);
+      });
+
       const toggleLabelsBtn = document.getElementById("toggleLabelsBtn");
       toggleLabelsBtn.addEventListener("click", () => {
         showPermanentLabels = !showPermanentLabels;
