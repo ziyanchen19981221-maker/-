@@ -120,7 +120,7 @@
           <h1 class="text-base font-bold text-stone-900 tracking-tight">首尔商业巡店推荐</h1>
         </div>
         <button id="toggleGuideBtn" type="button" class="text-xs font-medium text-stone-600 bg-white border border-stone-300 px-2.5 py-1.5 rounded-lg shadow-sm active:scale-95 transition">
-          数据维护说明
+          HTML维护说明
         </button>
       </div>
 
@@ -202,17 +202,31 @@
     </div>
   </div>
 
-  <!-- Modal for Kakao Map Domain Setup & Data Maintenance -->
+  <!-- Modal for HTML Architecture & Team Maintenance Guide -->
   <div id="guideModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs hidden items-center justify-center p-4">
     <div class="bg-white rounded-2xl max-w-sm w-full p-4 shadow-xl border border-stone-200 space-y-3 max-h-[85vh] overflow-y-auto">
       <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
-        <h3 class="text-sm font-bold text-stone-900">Kakao 地图配置与数据维护说明</h3>
+        <h3 class="text-sm font-bold text-stone-900">HTML 架构与后续维护说明（供协作者查阅）</h3>
         <button id="closeGuideBtn" type="button" class="text-xs text-stone-500 hover:text-stone-900 px-2 py-0.5 rounded bg-stone-100">关闭</button>
       </div>
-      <div class="text-xs text-stone-600 space-y-2.5 leading-relaxed">
-        <p><strong class="text-stone-900">1. Kakao Maps 双引擎自动护航机制：</strong><br/>已内置您的 Kakao JavaScript Key (<code class="bg-stone-100 px-1 py-0.5 rounded">a83b5b1a...efb1</code>)。当部署在已添加白名单的 GitHub Pages 域名（如 <code class="bg-stone-100 px-1 py-0.5 rounded">https://ziyanchen19981221-maker.github.io</code>）时，会自动调用韩国本土最高精度的 <strong>Kakao 原生韩文街巷地图</strong>；若在未授权的临时预览窗打开，会自动无缝切回免鉴权街景引擎，确保任何环境下永不白屏。</p>
-        <p><strong class="text-stone-900">2. 请确认 Kakao 后台已登记 GitHub 域名：</strong><br/>在 Kakao Developers 后台的 <strong>[플랫폼 (Platform) -> Web -> 사이트 도메인 (Site Domain)]</strong> 中，请务必填入：<br/><code class="bg-amber-50 border border-amber-200 text-amber-900 px-1.5 py-0.5 rounded block mt-1 select-all">https://ziyanchen19981221-maker.github.io</code></p>
-        <p><strong class="text-stone-900">3. 6大商圈全量覆盖（共160家标杆旺店）：</strong><br/>严格按照「明洞 → 弘大 → 汉南洞 → 圣水洞 → 江南 → 益善洞」顺序排布，每个商圈均将独有特色板块置于末尾，所有门店数据均集中在源码顶部的 <code class="bg-stone-100 px-1 py-0.5 rounded">SEOUL_GUIDE_DATA</code> 中，随时可增删修改。</p>
+      <div class="text-xs text-stone-600 space-y-3 leading-relaxed">
+        <div class="p-2.5 rounded-xl bg-stone-50 border border-stone-200/80">
+          <div class="font-bold text-stone-900 mb-1">一、 这个 HTML 是如何制作的（技术架构）</div>
+          <p>本项目采用<strong>“单文件零依赖构建（Single-File Web App）”</strong>模式制作，无需安装 Node.js、无需编译打包，所有内容均集成在同一个 <code class="bg-white px-1 py-0.5 rounded border border-stone-200">index.html</code> 中，主要由以下 3 层构成：</p>
+          <ul class="list-disc pl-4 mt-1 space-y-1">
+            <li><strong>响应式 UI 层：</strong>通过 CDN 引入 <code class="bg-white px-1 rounded">Tailwind CSS 3.4</code>，实现移动端吸顶导航栏、折叠手风琴面板与门店卡片排版。</li>
+            <li><strong>双地图渲染层：</strong>主引擎接入韩国本土 <code class="bg-white px-1 rounded">Kakao Maps JS SDK</code>（使用 <code class="bg-white px-1 rounded">CustomOverlay</code> 实现序号圆点与常驻店名同屏），并内置 <code class="bg-white px-1 rounded">Leaflet + Esri</code> 免鉴权街景作为自动回退引擎。</li>
+            <li><strong>数据与视图分离层：</strong>所有 6 大商圈、二级目录与 160 家门店资料全部存放在 <code class="bg-white px-1 rounded">&lt;script&gt;</code> 顶部的 <code class="bg-white px-1 rounded">SEOUL_GUIDE_DATA</code> JSON 对象中，由下方 JS 函数动态循环生成 DOM 节点与地图标点。</li>
+          </ul>
+        </div>
+
+        <div class="p-2.5 rounded-xl bg-stone-50 border border-stone-200/80">
+          <div class="font-bold text-stone-900 mb-1">二、 后续维护与修改的 4 个必要环节</div>
+          <p><strong>环节 1 · 增删门店或修改文案（最常用）：</strong><br/>用任意文本编辑器打开本文件（或直接在 GitHub 网页端点击铅笔图标 Edit），按 <code class="bg-white px-1 rounded">Ctrl+F</code> 搜索 <code class="bg-white px-1 rounded">SEOUL_GUIDE_DATA</code>。在对应商圈的 <code class="bg-white px-1 rounded">categories -> stores</code> 数组里，直接修改中文介绍，或复制一段现有门店代码块，替换店名、地址与经纬度（<code class="bg-white px-1 rounded">lat</code> / <code class="bg-white px-1 rounded">lng</code>，保留小数点后5位）并递增 <code class="bg-white px-1 rounded">num</code> 序号即可。</p>
+          <p class="mt-1.5"><strong>环节 2 · 调整地图标签防遮挡方向：</strong><br/>当同一街区新增密集门店导致店名重叠时，只需将该门店的 <code class="bg-white px-1 rounded">labelDir</code> 字段改为 <code class="bg-white px-1 rounded">"top"</code>、<code class="bg-white px-1 rounded">"bottom"</code>、<code class="bg-white px-1 rounded">"left"</code> 或 <code class="bg-white px-1 rounded">"right"</code>，地图上的店名气泡就会自动向对应方向错开。</p>
+          <p class="mt-1.5"><strong>环节 3 · 迁移网址或更换 Kakao Key：</strong><br/>文件顶部已配置 Kakao JS Key (<code class="bg-white px-1 rounded">a83b5b1a...efb1</code>)。若未来将此 HTML 部署到新的域名下，维护者必须登录 <a href="https://developers.kakao.com" target="_blank" class="underline text-amber-800">Kakao Developers</a> 后台，在 <strong>[플랫폼 (Platform) -> Web -> 사이트 도메인 (Site Domain)]</strong> 中添加新域名（当前已绑定 <code class="bg-white px-1 rounded">https://ziyanchen19981221-maker.github.io</code>），否则 Kakao 地图会因域名未授权而自动切回备用底图。</p>
+          <p class="mt-1.5"><strong>环节 4 · 线上发布更新（GitHub Pages）：</strong><br/>每次修改完代码后，在 GitHub 仓库中点击右上角绿色的 <strong>Commit changes</strong> 保存（或重新上传同名 <code class="bg-white px-1 rounded">index.html</code> 覆盖），等待约 30~60 秒 GitHub Actions 自动构建完成，手机端刷新原链接即可看到最新内容。</p>
+        </div>
       </div>
     </div>
   </div>
